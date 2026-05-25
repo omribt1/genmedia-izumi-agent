@@ -110,4 +110,15 @@ export const mediaApi = {
       method: 'GET',
     });
   },
+
+  async approveKeyframes(
+    userId: string,
+    sessionId: string,
+  ): Promise<{ status: string; message: string }> {
+    console.log(`[API] Approving keyframes for session ${sessionId}`);
+    return request(`/api/campaigns/${sessionId}/approve-keyframes`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
+  },
 };

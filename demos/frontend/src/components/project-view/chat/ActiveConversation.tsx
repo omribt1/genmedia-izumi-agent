@@ -93,6 +93,7 @@ export default function ActiveConversation({
   const [currentStep, setCurrentStep] = useState<string>('START');
   const [pendingSignals, setPendingSignals] = useState<string[]>([]);
   const [isApproving, setIsApproving] = useState(false);
+  const [isApprovingKeyframes, setIsApprovingKeyframes] = useState(false);
   const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
   const [isFetchingAsset, setIsFetchingAsset] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
@@ -141,6 +142,22 @@ export default function ActiveConversation({
       setError(err.message || 'Failed to approve storyboard');
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  const handleApproveKeyframes = async () => {
+    setIsApprovingKeyframes(true);
+    try {
+      await mediaService.approveKeyframes(projectId, sessionId);
+      // Optimistically update state
+      setPendingSignals([]);
+      setCurrentStep('KEYFRAME_PROMPTS_APPROVED');
+      onRefreshProject?.();
+    } catch (err: any) {
+      console.error('Failed to approve keyframe prompts:', err);
+      setError(err.message || 'Failed to approve keyframe prompts');
+    } finally {
+      setIsApprovingKeyframes(false);
     }
   };
 
@@ -639,6 +656,40 @@ export default function ActiveConversation({
                 size="small"
               />
             ))}
+          </Box>
+        )}
+        {pendingSignals.includes('keyframes_approved') && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              p: 2,
+              mb: 2,
+              bgcolor: 'info.dark',
+              borderRadius: 1,
+              border: 1,
+              borderColor: 'info.main',
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle2" sx={{ color: 'info.contrastText' }}>
+                Keyframe Prompts Ready for Review
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'info.contrastText', opacity: 0.8 }}>
+                Review and edit visual prompts in the Canvases tab before generating images.
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              color="info"
+              size="small"
+              onClick={handleApproveKeyframes}
+              disabled={isApprovingKeyframes}
+              startIcon={isApprovingKeyframes ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              {isApprovingKeyframes ? 'Approving...' : 'Approve Prompts & Start Production'}
+            </Button>
           </Box>
         )}
         {pendingSignals.includes('storyboard_approved') && (

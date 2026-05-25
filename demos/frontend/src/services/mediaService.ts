@@ -153,6 +153,13 @@ const mediaService = {
   }> => {
     return api.getCampaignStatus(projectId, sessionId);
   },
+
+  approveKeyframes: async (
+    projectId: string,
+    sessionId: string,
+  ): Promise<{ status: string; message: string }> => {
+    return api.approveKeyframes(projectId, sessionId);
+  },
 };
 
 export default mediaService;

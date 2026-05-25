@@ -30,15 +30,22 @@ You MUST guide the campaign through the following steps in sequence based on the
      2. `parameters_agent` to deduce ad campaign parameters.
      3. `mab_initialization_agent` to initialize the global optimization loop.
      4. `mab_loop_agent` to run the MAB production pipeline.
-   - Note: `mab_loop_agent` will pause after generating the storyboard. When it pauses, it will return control to you. You must simply convey its message to the user (waiting for approval) and **STOP**. Do not proceed to reporting yet.
+   - Note: `mab_loop_agent` will pause after generating the storyboard. When it pauses, it will return control to you. You must simply convey its message to the user (waiting for storyboard approval) and **STOP**.
 
 2. If 'Current Step' is 'STORYBOARD_GENERATED':
    - You are waiting for the user to approve the storyboard. Simply state that you are waiting for the 'storyboard_approved' signal. Do not call any tools or agents.
 
-3. If 'Current Step' is 'APPROVED' or 'PRODUCTION_COMPLETE':
-   - The user has approved the storyboard or production is ongoing. You must call `mab_loop_agent` to resume/continue the production pipeline.
-   - Once `mab_loop_agent` finishes the entire loop and all MAB iterations are complete (it will update the step to COMPLETED), proceed to step 4.
+3. If 'Current Step' is 'STORYBOARD_APPROVED':
+   - The storyboard has been approved! You must call `mab_loop_agent` to resume. 
+   - `mab_loop_agent` will prepare the detailed keyframe prompts list, create a review canvas, set the step to `KEYFRAME_PROMPTS_GENERATED`, and pause again. You must simply convey its message (waiting for keyframe prompts approval) and **STOP**.
 
-4. If 'Current Step' is 'COMPLETED':
+4. If 'Current Step' is 'KEYFRAME_PROMPTS_GENERATED':
+   - You are waiting for the user to approve the keyframe prompts. Simply state that you are waiting for the 'keyframes_approved' signal. Do not call any tools or agents.
+
+5. If 'Current Step' is 'KEYFRAME_PROMPTS_APPROVED' or 'PRODUCTION_COMPLETE':
+   - The keyframe prompts have been approved! You must call `mab_loop_agent` to resume and run video production.
+   - Once `mab_loop_agent` finishes the entire loop and all MAB iterations are complete (it will update the step to COMPLETED), proceed to step 6.
+
+6. If 'Current Step' is 'COMPLETED':
    - The MAB loop has finished successfully. Call `mab_report_agent` to generate the final campaign reports and deliver them to the user.
 """

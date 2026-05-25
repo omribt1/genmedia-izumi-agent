@@ -331,6 +331,15 @@ iteration_manager_agent = llm_agent.LlmAgent(
     tools=[FunctionTool(mab_utils.prepare_iteration_state)],
 )
 
+keyframe_prompts_reviewer_agent = llm_agent.LlmAgent(
+    name="keyframe_prompts_reviewer_agent",
+    description="Agent that prepares the visual Keyframe Prompts Review canvas.",
+    model=LLM_MODEL_NAME,
+    instruction="You MUST call the `create_keyframe_prompts_canvas` tool. After the tool runs, you MUST return the tool's output EXACTLY as it was provided to you, with no modifications, summarizations, or added text.",
+    tools=[FunctionTool(mab_utils.create_keyframe_prompts_canvas)],
+)
+
+
 iteration_orchestrator_agent = llm_agent.LlmAgent(
     name="iteration_orchestrator_agent",
     description="Agent that orchestrates a single MAB iteration with approval checkpoints.",
@@ -344,6 +353,7 @@ iteration_orchestrator_agent = llm_agent.LlmAgent(
         cd_flattener_agent,
         creative_direction_saver,
         pre_production_agent,
+        keyframe_prompts_reviewer_agent,
         production_agent,
         post_production_agent,
         final_video_verifier_agent,

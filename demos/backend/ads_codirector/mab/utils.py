@@ -1414,3 +1414,144 @@ def _generate_storyboard_html(
 </html>
 """
     return html
+
+
+def _generate_keyframes_prompts_html(storyboard_dict: dict, use_asset_uris: bool = True) -> str:
+    scenes = storyboard_dict.get("scenes", [])
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f4f7fa; color: #2d3436; }}
+        .container {{ max-width: 850px; margin: auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #dfe6e9; }}
+        h1 {{ color: #5c67f2; border-bottom: 3px solid #5c67f2; padding-bottom: 10px; margin-top: 0; }}
+        p.subtitle {{ color: #636e72; font-size: 1.0em; margin-bottom: 30px; }}
+        .scene-card {{ border: 1px solid #dfe6e9; border-radius: 6px; padding: 20px; margin-bottom: 20px; background: #f8f9fa; }}
+        .scene-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #dfe6e9; padding-bottom: 8px; }}
+        .scene-num {{ font-size: 1.2em; font-weight: bold; color: #5c67f2; }}
+        .scene-topic {{ font-weight: 600; font-size: 1.1em; }}
+        .media-ref {{ margin-bottom: 15px; padding: 10px; background: white; border-radius: 4px; border: 1px dashed #b2bec3; display: inline-block; }}
+        .media-ref strong {{ color: #5c67f2; display: block; margin-bottom: 5px; font-size: 0.85em; }}
+        .media-ref img {{ max-height: 150px; display: block; border-radius: 4px; }}
+        .prompt-section {{ margin-bottom: 12px; }}
+        .prompt-label {{ font-weight: bold; font-size: 0.85em; color: #636e72; margin-bottom: 4px; }}
+        pre {{ white-space: pre-wrap; word-wrap: break-word; background: #2d2d2d; color: #f1f1f1; padding: 12px; border-radius: 6px; font-size: 0.9em; margin: 0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Keyframe Generation Prompts Review</h1>
+        <p class="subtitle">Review the detailed visual and temporal prompts generated for each scene before we launch image and video creation. Reference assets are shown if this is an image-to-image generation.</p>
+"""
+
+    for idx, scene in enumerate(scenes):
+        topic = scene.get("topic", "N/A")
+        ff_prompt = scene.get("first_frame_prompt", {})
+        video_prompt = scene.get("video_prompt", {})
+
+        ff_desc = ff_prompt.get("description", "N/A")
+        v_desc = video_prompt.get("description", "N/A")
+        assets_list = ff_prompt.get("assets", [])
+
+        html += f"""
+        <div class="scene-card">
+            <div class="scene-header">
+                <span class="scene-num">Scene #{idx+1}</span>
+                <span class="scene-topic">{topic}</span>
+            </div>
+        """
+
+        # If there are reference assets, display the first one
+        if assets_list and len(assets_list) > 0:
+            filename = assets_list[0]
+            img_src = f"asset://{filename}" if use_asset_uris else ""
+            html += f"""
+            <div class="media-ref">
+                <strong>REFERENCE IMAGE (Image-to-Image):</strong>
+                <img src="{img_src}" alt="{filename}">
+                <div style="font-size:0.7em; color:#999; margin-top:4px;">{filename}</div>
+            </div>
+            """
+
+        html += f"""
+            <div class="prompt-section">
+                <div class="prompt-label">KEYFRAME IMAGE GENERATION PROMPT (Imagen 4):</div>
+                <pre>{ff_desc}</pre>
+            </div>
+            <div class="prompt-section">
+                <div class="prompt-label">VIDEO ANIMATION PROMPT (Veo):</div>
+                <pre>{v_desc}</pre>
+            </div>
+        </div>
+        """
+
+    html += """
+    </div>
+</body>
+</html>
+"""
+    return html
+
+
+async def create_keyframe_prompts_canvas(tool_context: ToolContext) -> common_utils.ToolResult:
+    """
+    Generates an HTML Canvas representing the keyframe prompts and reference assets,
+    and saves it as a project canvas for the user to review.
+    """
+    try:
+        state = tool_context.state
+        storyboard = state.get(common_utils.STORYBOARD_KEY)
+        if not storyboard:
+            return common_utils.tool_failure("Storyboard not found in state. Please generate storyboard first.")
+
+        # Convert Pydantic model to dict if necessary
+        if hasattr(storyboard, "model_dump"):
+            storyboard_dict = storyboard.model_dump()
+        elif isinstance(storyboard, dict):
+            storyboard_dict = storyboard
+        else:
+            storyboard_dict = str(storyboard)
+
+        user_id = common_utils.get_user_id(tool_context)
+        mab_iter = state.get("mab_iteration", 0)
+
+        logger.info(f"Generating visual HTML keyframe prompts Canvas for user {user_id}...")
+
+        # 1. Generate HTML
+        html_content = _generate_keyframes_prompts_html(storyboard_dict, use_asset_uris=True)
+
+        # 2. Resolve referenced filenames in assets list to asset IDs for authorization
+        asset_service = mediagent_kit.services.aio.get_asset_service()
+        all_user_assets = await asset_service.list_assets(user_id=user_id)
+        asset_map = {asset.file_name: asset for asset in all_user_assets}
+
+        resolved_asset_ids = set()
+        scenes = storyboard_dict.get("scenes", [])
+        for scene in scenes:
+            assets_list = scene.get("first_frame_prompt", {}).get("assets", [])
+            for filename in assets_list:
+                if filename in asset_map:
+                    resolved_asset_ids.add(asset_map[filename].id)
+                else:
+                    logger.warning(f"Could not resolve asset filename '{filename}' in keyframe prompts.")
+
+        # 3. Save Canvas
+        canvas_service = mediagent_kit.services.aio.get_canvas_service()
+        canvas_html = Html(content=html_content, asset_ids=list(resolved_asset_ids))
+
+        canvas = await canvas_service.create_canvas(
+            user_id=user_id,
+            title=f"Keyframe Prompts: Iteration {mab_iter}",
+            html=canvas_html
+        )
+
+        logger.info(f"Keyframe Prompts Canvas successfully created with ID: {canvas.id}")
+        return common_utils.tool_success(
+            f"Keyframe Prompts Canvas created with ID: {canvas.id}. "
+            "You should now present these prompts to the user for review."
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to create Keyframe Prompts Canvas: {e}", exc_info=True)
+        return common_utils.tool_failure(f"Failed to create Keyframe Prompts Canvas: {e}")

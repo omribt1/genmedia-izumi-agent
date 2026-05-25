@@ -45,7 +45,7 @@ class IzumiResumeHandler:
     ) -> None:
         """Called when the storyboard/script is approved by the user.
 
-        Wakes up the ads_codirector agent, transitions the step to APPROVED, and resumes.
+        Wakes up the ads_codirector agent, transitions the step to STORYBOARD_APPROVED, and resumes.
         """
         self._log_structured(
             severity="INFO",
@@ -59,11 +59,11 @@ class IzumiResumeHandler:
         try:
             self._log_structured(
                 severity="INFO",
-                message=f"State machine transitioned to {CampaignStep.APPROVED}",
+                message=f"State machine transitioned to {CampaignStep.STORYBOARD_APPROVED}",
                 event="state_transition",
                 session_id=session_id,
                 user_id=user_id,
-                new_step=CampaignStep.APPROVED,
+                new_step=CampaignStep.STORYBOARD_APPROVED,
             )
 
             # Trigger runner wake-up and run execution ambiently
@@ -74,12 +74,12 @@ class IzumiResumeHandler:
                     role="user",
                     parts=[
                         types.Part.from_text(
-                            text="Resume production: Storyboard and script have been approved. Start video generation."
+                            text="Resume production: Storyboard and script have been approved. Prepare keyframe prompts."
                         )
                     ],
                 ),
                 state_delta={
-                    "current_step": CampaignStep.APPROVED,
+                    "current_step": CampaignStep.STORYBOARD_APPROVED,
                     "pending_signals": [],
                 },
             ):
@@ -102,6 +102,75 @@ class IzumiResumeHandler:
             self._log_structured(
                 severity="ERROR",
                 message=f"Ambient storyboard approval execution turn failed: {e!s}",
+                event="runner_turn_failure",
+                session_id=session_id,
+                user_id=user_id,
+                error=str(e),
+            )
+            raise
+
+    async def receive_keyframes_approval_callback(
+        self, user_id: str, session_id: str
+    ) -> None:
+        """Called when the keyframe prompts are approved by the user.
+
+        Wakes up the ads_codirector agent, transitions the step to KEYFRAME_PROMPTS_APPROVED, and resumes.
+        """
+        self._log_structured(
+            severity="INFO",
+            message=f"Received keyframe prompts approval notification for session {session_id}",
+            event="webhook_received",
+            webhook_type="keyframes_approved",
+            session_id=session_id,
+            user_id=user_id,
+        )
+
+        try:
+            self._log_structured(
+                severity="INFO",
+                message=f"State machine transitioned to {CampaignStep.KEYFRAME_PROMPTS_APPROVED}",
+                event="state_transition",
+                session_id=session_id,
+                user_id=user_id,
+                new_step=CampaignStep.KEYFRAME_PROMPTS_APPROVED,
+            )
+
+            # Trigger runner wake-up and run execution ambiently
+            async for event in self.runner.run_async(
+                user_id=user_id,
+                session_id=session_id,
+                new_message=types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(
+                            text="Resume production: Keyframe prompts have been approved. Start visual generation."
+                        )
+                    ],
+                ),
+                state_delta={
+                    "current_step": CampaignStep.KEYFRAME_PROMPTS_APPROVED,
+                    "pending_signals": [],
+                },
+            ):
+                self._log_structured(
+                    severity="INFO",
+                    message=f"Wake-up execution event: {event}",
+                    event="runner_event",
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+
+            self._log_structured(
+                severity="INFO",
+                message="Ambient keyframe prompts approval execution turn completed successfully",
+                event="runner_turn_success",
+                session_id=session_id,
+                user_id=user_id,
+            )
+        except Exception as e:
+            self._log_structured(
+                severity="ERROR",
+                message=f"Ambient keyframe prompts approval execution turn failed: {e!s}",
                 event="runner_turn_failure",
                 session_id=session_id,
                 user_id=user_id,

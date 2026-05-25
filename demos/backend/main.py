@@ -244,3 +244,31 @@ async def get_campaign_status(
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/webhooks/keyframes_approved")
+async def trigger_keyframes_approved_webhook(
+    session_id: str, payload: ApprovalPayload
+) -> dict[str, str]:
+    """Webhook called when keyframe prompts are approved. Wakes up the ads_codirector agent."""
+    await resume_handler.receive_keyframes_approval_callback(
+        user_id=payload.user_id, session_id=session_id
+    )
+    return {
+        "status": "success",
+        "message": "Keyframe prompts approval processed, agent resumed.",
+    }
+
+
+@app.post("/api/campaigns/{session_id}/approve-keyframes")
+async def approve_campaign_keyframes(
+    session_id: str, payload: ApprovalPayload
+) -> dict[str, str]:
+    """Direct API called by UI to approve keyframe prompts and resume production."""
+    await resume_handler.receive_keyframes_approval_callback(
+        user_id=payload.user_id, session_id=session_id
+    )
+    return {
+        "status": "success",
+        "message": "Keyframe prompts approved, production resumed.",
+    }
+
