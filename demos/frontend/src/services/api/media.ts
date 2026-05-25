@@ -85,4 +85,29 @@ export const mediaApi = {
       method: 'GET',
     });
   },
+
+  async approveStoryboard(
+    userId: string,
+    sessionId: string,
+  ): Promise<{ status: string; message: string }> {
+    console.log(`[API] Approving storyboard for session ${sessionId}`);
+    return request(`/api/campaigns/${sessionId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
+  },
+
+  async getCampaignStatus(
+    userId: string,
+    sessionId: string,
+  ): Promise<{
+    session_id: string;
+    current_step: string;
+    pending_signals: string[];
+    project_details: any;
+  }> {
+    return request(`/api/campaigns/${sessionId}/status?user_id=${userId}`, {
+      method: 'GET',
+    });
+  },
 };

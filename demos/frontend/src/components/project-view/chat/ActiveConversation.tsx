@@ -40,6 +40,8 @@ import ReactMarkdown from 'react-markdown';
 import MarkdownRenderer from '../../shared/MarkdownRenderer';
 import type { ChatMessage, ProjectAsset, Canvas } from '../../../data/types';
 import chatService from '../../../services/chatService';
+import mediaService from '../../../services/mediaService';
+
 
 const bounce = keyframes`
   0%, 80%, 100% { 
@@ -78,6 +80,9 @@ export default function ActiveConversation({
   );
   const [newMessage, setNewMessage] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [currentStep, setCurrentStep] = useState<string>('START');
+  const [pendingSignals, setPendingSignals] = useState<string[]>([]);
+  const [isApproving, setIsApproving] = useState(false);
   const [chatFiles, setChatFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -87,6 +92,45 @@ export default function ActiveConversation({
   const [error, setError] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Poll campaign status for stateful approvals
+  useEffect(() => {
+    if (!sessionId || !projectId || appName !== 'ads_codirector') return;
+
+    const pollStatus = async () => {
+      try {
+        const status = await mediaService.getCampaignStatus(projectId, sessionId);
+        setCurrentStep(status.current_step);
+        setPendingSignals(status.pending_signals);
+      } catch (err) {
+        console.error('Failed to poll campaign status:', err);
+      }
+    };
+
+    // Poll immediately
+    pollStatus();
+
+    const intervalId = setInterval(pollStatus, 5000); // Poll every 5 seconds
+    return () => clearInterval(intervalId);
+  }, [projectId, sessionId, appName]);
+
+  const handleApproveStoryboard = async () => {
+    setIsApproving(true);
+    try {
+      await mediaService.approveStoryboard(projectId, sessionId);
+      // Optimistically update state
+      setPendingSignals([]);
+      setCurrentStep('APPROVED');
+      // Trigger a refresh of the project canvases/assets to show new progress
+      onRefreshProject?.();
+    } catch (err: any) {
+      console.error('Failed to approve storyboard:', err);
+      setError(err.message || 'Failed to approve storyboard');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -271,14 +315,25 @@ export default function ActiveConversation({
           zIndex: 10,
         }}
       >
-        <Button
-          startIcon={<ArrowBackIcon />}
-          size="small"
-          onClick={onBack}
-          sx={{ color: 'text.secondary' }}
-        >
-          Back
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            size="small"
+            onClick={onBack}
+            sx={{ color: 'text.secondary' }}
+          >
+            Back
+          </Button>
+          {currentStep !== 'START' && (
+            <Chip
+              label={currentStep.replace('_', ' ')}
+              size="small"
+              color="primary"
+              variant="outlined"
+              sx={{ fontSize: '0.7rem' }}
+            />
+          )}
+        </Box>
         <Button
           variant="outlined"
           size="small"
@@ -533,6 +588,40 @@ export default function ActiveConversation({
                 size="small"
               />
             ))}
+          </Box>
+        )}
+        {pendingSignals.includes('storyboard_approved') && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              p: 2,
+              mb: 2,
+              bgcolor: 'success.dark',
+              borderRadius: 1,
+              border: 1,
+              borderColor: 'success.main',
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle2" sx={{ color: 'success.contrastText' }}>
+                Storyboard & Script Ready
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'success.contrastText', opacity: 0.8 }}>
+                Review the generated storyboard in the canvases tab.
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              onClick={handleApproveStoryboard}
+              disabled={isApproving}
+              startIcon={isApproving ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              {isApproving ? 'Approving...' : 'Approve & Generate Video'}
+            </Button>
           </Box>
         )}
         <Box sx={{ display: 'flex', alignItems: 'center' }}>

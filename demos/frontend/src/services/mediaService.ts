@@ -134,6 +134,25 @@ const mediaService = {
     pendingJobs.push(job);
     return job;
   },
+
+  approveStoryboard: async (
+    projectId: string,
+    sessionId: string,
+  ): Promise<{ status: string; message: string }> => {
+    return api.approveStoryboard(projectId, sessionId);
+  },
+
+  getCampaignStatus: async (
+    projectId: string,
+    sessionId: string,
+  ): Promise<{
+    session_id: string;
+    current_step: string;
+    pending_signals: string[];
+    project_details: any;
+  }> => {
+    return api.getCampaignStatus(projectId, sessionId);
+  },
 };
 
 export default mediaService;

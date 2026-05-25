@@ -37,6 +37,11 @@ import mediagent_kit
 from config import settings
 from mediagent_kit import MediagentKitConfig
 from mediagent_kit.server import mount_to_fastapi_app
+from fastapi import HTTPException
+from pydantic import BaseModel
+from resume_handler import IzumiResumeHandler
+from state_schema import CampaignStep
+
 
 # Define the path to the agents directory
 agents_dir = os.path.dirname(os.path.abspath(__file__))
@@ -174,3 +179,68 @@ if os.path.exists(dist_path):
     app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
 else:
     print(f"[mediagent_kit] Static files directory not found at {dist_path}")
+
+
+# --- Stateful Approval Endpoints ---
+
+# Instantiate the resume handler
+resume_handler = IzumiResumeHandler(session_service=session_service)
+
+
+class ApprovalPayload(BaseModel):
+    user_id: str = "project_1779636532715"  # Default user ID used in logs
+
+
+@app.post("/webhooks/storyboard_approved")
+async def trigger_storyboard_approved_webhook(
+    session_id: str, payload: ApprovalPayload
+) -> dict[str, str]:
+    """Webhook called when storyboard is approved. Wakes up the ads_codirector agent."""
+    await resume_handler.receive_storyboard_approval_callback(
+        user_id=payload.user_id, session_id=session_id
+    )
+    return {
+        "status": "success",
+        "message": "Storyboard approval processed, agent resumed.",
+    }
+
+
+@app.post("/api/campaigns/{session_id}/approve")
+async def approve_campaign_storyboard(
+    session_id: str, payload: ApprovalPayload
+) -> dict[str, str]:
+    """Direct API called by UI to approve storyboard and resume production."""
+    await resume_handler.receive_storyboard_approval_callback(
+        user_id=payload.user_id, session_id=session_id
+    )
+    return {
+        "status": "success",
+        "message": "Storyboard approved, production resumed.",
+    }
+
+
+@app.get("/api/campaigns/{session_id}/status")
+async def get_campaign_status(
+    session_id: str, user_id: str = "project_1779636532715"
+) -> dict:
+    """Fetches the current status of the campaign from Firestore."""
+    try:
+        # Retrieve session from Firestore
+        session = await session_service.get_session(
+            app_name="ads_codirector", user_id=user_id, session_id=session_id
+        )
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        state = session.state
+        return {
+            "session_id": session_id,
+            "current_step": state.get("current_step", CampaignStep.START),
+            "pending_signals": state.get("pending_signals", []),
+            "project_details": state.get("project_details", {}),
+        }
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+

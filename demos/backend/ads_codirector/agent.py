@@ -34,6 +34,8 @@ from .instructions.verifier import (
     storyline_verifier_instruction,
 )
 from .mab import utils as mab_utils
+from state_schema import CampaignStep
+from .instructions.mab import iteration_orchestrator_instruction
 from .tools import (
     user_assets_tools,
     casting_tools,
@@ -329,9 +331,11 @@ iteration_manager_agent = llm_agent.LlmAgent(
     tools=[FunctionTool(mab_utils.prepare_iteration_state)],
 )
 
-iteration_agent = sequential_agent.SequentialAgent(
-    name="iteration_agent",
-    description="Agent that produces a video ad.",
+iteration_orchestrator_agent = llm_agent.LlmAgent(
+    name="iteration_orchestrator_agent",
+    description="Agent that orchestrates a single MAB iteration with approval checkpoints.",
+    model=LLM_MODEL_NAME,
+    instruction=iteration_orchestrator_instruction.INSTRUCTION,
     sub_agents=[
         iteration_manager_agent,
         mab_selection_agent,
@@ -372,13 +376,18 @@ mab_initialization_agent = llm_agent.LlmAgent(
 mab_loop_agent = LoopAgent(
     name="mab_loop_agent",
     description=f"Loop agent that runs the production pipeline {num_iterations} times.",
-    sub_agents=[iteration_agent],
+    sub_agents=[iteration_orchestrator_agent],
     max_iterations=num_iterations,
 )
 
 
 async def combined_callback(callback_context, llm_request):
     """Combines user input storage and blob interception."""
+    state = callback_context.state
+    if "current_step" not in state:
+        state["current_step"] = CampaignStep.START
+    if "pending_signals" not in state:
+        state["pending_signals"] = []
     await common_utils.store_user_input_model_callback(callback_context, llm_request)
     return await blob_interceptor_callback(callback_context, llm_request)
 
