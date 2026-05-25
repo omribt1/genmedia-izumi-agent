@@ -381,13 +381,17 @@ mab_loop_agent = LoopAgent(
 )
 
 
-async def combined_callback(callback_context, llm_request):
-    """Combines user input storage and blob interception."""
+async def initialize_mab_state(callback_context):
+    """Initializes the campaign step state at the start of the agent run."""
     state = callback_context.state
     if "current_step" not in state:
         state["current_step"] = CampaignStep.START
     if "pending_signals" not in state:
         state["pending_signals"] = []
+
+
+async def combined_callback(callback_context, llm_request):
+    """Combines user input storage and blob interception."""
     await common_utils.store_user_input_model_callback(callback_context, llm_request)
     return await blob_interceptor_callback(callback_context, llm_request)
 
@@ -403,5 +407,6 @@ root_agent = llm_agent.LlmAgent(
         AgentTool(mab_loop_agent),
         AgentTool(mab_report_agent),
     ],
+    before_agent_callback=initialize_mab_state,
     before_model_callback=combined_callback,
 )

@@ -29,11 +29,21 @@ import {
   CircularProgress,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Grid,
+  Card,
+  CardMedia,
+  CardActionArea,
+  CardContent,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddCommentIcon from '@mui/icons-material/AddComment';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -83,6 +93,8 @@ export default function ActiveConversation({
   const [currentStep, setCurrentStep] = useState<string>('START');
   const [pendingSignals, setPendingSignals] = useState<string[]>([]);
   const [isApproving, setIsApproving] = useState(false);
+  const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
+  const [isFetchingAsset, setIsFetchingAsset] = useState(false);
   const [chatFiles, setChatFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -180,6 +192,25 @@ export default function ActiveConversation({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setChatFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const handleSelectAsset = async (asset: ProjectAsset) => {
+    setIsAssetDialogOpen(false);
+    setIsFetchingAsset(true);
+    try {
+      const response = await fetch(asset.url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch asset: ${response.statusText}`);
+      }
+      const blob = await response.blob();
+      const file = new File([blob], asset.fileName || 'unnamed_asset', { type: blob.type });
+      setChatFiles((prev) => [...prev, file]);
+    } catch (err: any) {
+      console.error('Failed to attach project asset:', err);
+      setError(err.message || 'Failed to attach project asset');
+    } finally {
+      setIsFetchingAsset(false);
     }
   };
 
@@ -635,8 +666,21 @@ export default function ActiveConversation({
           <IconButton
             onClick={() => fileInputRef.current?.click()}
             sx={{ mr: 1 }}
+            title="Attach Local File"
           >
             <AttachFileIcon />
+          </IconButton>
+          <IconButton
+            onClick={() => setIsAssetDialogOpen(true)}
+            sx={{ mr: 1 }}
+            title="Attach Project Asset"
+            disabled={isFetchingAsset || !projectAssets || projectAssets.length === 0}
+          >
+            {isFetchingAsset ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              <FolderOpenIcon />
+            )}
           </IconButton>
           <TextField
             placeholder={`Message ${appName || 'Agent'}...`}
@@ -683,6 +727,55 @@ export default function ActiveConversation({
           Agents can make mistakes, so double check it.
         </Typography>
       </Box>
+      <Dialog
+        open={isAssetDialogOpen}
+        onClose={() => setIsAssetDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Select Project Asset to Attach</DialogTitle>
+        <DialogContent dividers>
+          {projectAssets && projectAssets.length > 0 ? (
+            <Grid container spacing={2}>
+              {projectAssets
+                .filter((asset) => asset.type === 'image')
+                .map((asset) => (
+                  <Grid size={{ xs: 6, sm: 4, md: 3 }} key={asset.id}>
+                    <Card variant="outlined">
+                      <CardActionArea onClick={() => handleSelectAsset(asset)}>
+                        <CardMedia
+                          component="img"
+                          height="120"
+                          image={asset.url}
+                          alt={asset.fileName || 'Asset'}
+                          sx={{ objectFit: 'contain', p: 1, bgcolor: 'grey.900' }}
+                        />
+                        <CardContent sx={{ p: 1 }}>
+                          <Typography
+                            variant="caption"
+                            noWrap
+                            display="block"
+                            sx={{ textAlign: 'center' }}
+                          >
+                            {asset.fileName || 'Unnamed'}
+                          </Typography>
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
+                  </Grid>
+                ))}
+            </Grid>
+          ) : (
+            <Typography variant="body2" color="text.secondary" align="center">
+              No image assets found in this project. Upload some in the Assets tab first!
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsAssetDialogOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={!!error}
         autoHideDuration={null}
