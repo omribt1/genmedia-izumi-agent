@@ -1240,7 +1240,7 @@ class CreativeDirectionSaver(BaseAgent):
 
 
 class StoryboardSaver(BaseAgent):
-    """Saves the final storyboard as a persistent JSON asset."""
+    """Saves the final storyboard as a persistent JSON asset and a visual Canvas."""
 
     async def _run_async_impl(
         self, ctx: InvocationContext
@@ -1267,12 +1267,38 @@ class StoryboardSaver(BaseAgent):
                 else:
                     storyboard_dict = str(storyboard)
 
+                # 1. Save JSON asset
                 await asset_service.save_asset(
                     user_id=user_id,
                     file_name=f"iter_{mab_iter}_storyboard.json",
                     blob=json.dumps(storyboard_dict, indent=2).encode(),
                     mime_type="application/json",
                 )
+
+                # 2. Generate and save visual HTML storyboard Canvas
+                try:
+                    logger.info(f"Generating visual HTML storyboard Canvas for user {user_id}...")
+                    casting_specs = state.get(common_utils.CASTING_KEY, {})
+                    campaign_brief = state.get(common_utils.CREATIVE_BRIEF_KEY, "No brief provided.")
+
+                    html_content = _generate_storyboard_html(
+                        storyboard_dict=storyboard_dict,
+                        casting_dict=casting_specs,
+                        campaign_brief=campaign_brief
+                    )
+
+                    canvas_service = mediagent_kit.services.aio.get_canvas_service()
+                    canvas_html = Html(content=html_content, asset_ids=[]) # No visual assets yet, just text
+
+                    canvas = await canvas_service.create_canvas(
+                        user_id=user_id,
+                        title=f"Storyboard: Iteration {mab_iter}",
+                        html=canvas_html
+                    )
+                    logger.info(f"Storyboard Canvas successfully created with ID: {canvas.id}")
+                except Exception as ce:
+                    logger.error(f"Failed to create Storyboard Canvas: {ce}", exc_info=True)
+
             except Exception as e:
                 logger.error(f"Failed to save storyboard as asset: {e}")
         yield Event(author=self.name)
@@ -1300,3 +1326,91 @@ class AssetInventoryPreparer(BaseAgent):
             "\n".join(inventory) if inventory else "No assets available."
         )
         yield Event(author=self.name)
+
+
+def _generate_storyboard_html(
+    storyboard_dict: dict, casting_dict: dict, campaign_brief: str
+) -> str:
+    scenes = storyboard_dict.get("scenes", [])
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f4f7fa; color: #2d3436; }}
+        .container {{ max-width: 1000px; margin: auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #dfe6e9; }}
+        h1 {{ color: #5c67f2; border-bottom: 3px solid #5c67f2; padding-bottom: 10px; margin-top: 0; }}
+        h2 {{ color: #2d3436; margin-top: 30px; border-bottom: 1px solid #dfe6e9; padding-bottom: 5px; }}
+        .brief {{ background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #5c67f2; margin-bottom: 25px; font-size: 0.95em; }}
+        .casting {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }}
+        .casting-box {{ background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #dfe6e9; }}
+        .casting-box strong {{ color: #5c67f2; display: block; margin-bottom: 5px; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }}
+        th, td {{ padding: 15px; border: 1px solid #dfe6e9; text-align: left; vertical-align: top; line-height: 1.5; }}
+        th {{ background-color: #5c67f2; color: white; font-weight: 600; }}
+        tr:nth-child(even) {{ background-color: #f8f9fa; }}
+        .bold {{ font-weight: 600; color: #2d3436; }}
+        .scene-num {{ font-size: 1.2em; font-weight: bold; color: #5c67f2; text-align: center; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Campaign Storyboard & Script</h1>
+
+        <div class="brief">
+            <strong style="color: #5c67f2; font-size: 1.1em; display:block; margin-bottom: 5px;">Creative Brief:</strong>
+            {campaign_brief}
+        </div>
+"""
+
+    if casting_dict:
+        html += f"""
+        <h2>Character Casting</h2>
+        <div class="casting">
+            <div class="casting-box">
+                <strong>Cast Profile:</strong>
+                {casting_dict.get('character_profile', 'N/A')}
+            </div>
+            <div class="casting-box">
+                <strong>Wardrobe Specification:</strong>
+                {casting_dict.get('wardrobe_description', 'N/A')}
+            </div>
+        </div>
+        """
+
+    html += """
+        <h2>Scenes & Script</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 8%; text-align: center;">Scene</th>
+                    <th style="width: 22%;">Topic</th>
+                    <th style="width: 45%;">Visual Action Prompt</th>
+                    <th style="width: 25%;">Voiceover / Narration</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+
+    for idx, scene in enumerate(scenes):
+        topic = scene.get("topic", "N/A")
+        visual = scene.get("first_frame_prompt", {}).get("description") or scene.get("visual_description") or "N/A"
+        vo = scene.get("voiceover_prompt", {}).get("description") or scene.get("voiceover_text") or "N/A"
+
+        html += f"""
+                <tr>
+                    <td class="scene-num">#{idx+1}</td>
+                    <td class="bold">{topic}</td>
+                    <td>{visual}</td>
+                    <td style="font-style: italic; color: #2d3436; background-color: rgba(92, 103, 242, 0.03);">"{vo}"</td>
+                </tr>
+"""
+
+    html += """
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
+"""
+    return html
