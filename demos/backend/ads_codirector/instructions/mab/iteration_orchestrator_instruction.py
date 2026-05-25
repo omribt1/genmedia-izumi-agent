@@ -26,9 +26,7 @@ You MUST follow this workflow exactly based on the 'Current Step':
      2. `mab_selection_agent` (to select the MAB arms).
      3. `theoretical_definitions_agent` (to get definitions for the arms).
      4. `creative_director_agent` (to synthesize the creative direction).
-     5. `cd_flattener_agent` (to flatten the creative direction).
-     6. `creative_direction_saver` (to save the creative direction).
-     7. `pre_production_agent` (to run the full pre-production pipeline: brief, storyline, casting, and storyboard).
+     5. `pre_production_agent` (to run the full pre-production pipeline: flattening creative direction, saving it, and compiling the storyline, casting, storyboard, and script).
    - Once `pre_production_agent` completes successfully, you MUST:
      - Update the state: set 'current_step' to 'STORYBOARD_GENERATED'.
      - Set 'pending_signals' to ['storyboard_approved'].

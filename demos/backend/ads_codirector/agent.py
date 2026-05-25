@@ -200,10 +200,24 @@ asset_inventory_preparer = mab_utils.AssetInventoryPreparer(
     name="asset_inventory_preparer"
 )
 
+cd_flattener_agent = llm_agent.LlmAgent(
+    name="cd_flattener_agent",
+    description="Tool agent that flattens creative direction into the state.",
+    model=LLM_MODEL_NAME,
+    instruction="You MUST call the `flatten_creative_direction` tool. Return ONLY the tool output.",
+    tools=[FunctionTool(mab_utils.flatten_creative_direction)],
+)
+
+creative_direction_saver = mab_utils.CreativeDirectionSaver(
+    name="creative_direction_saver"
+)
+
 pre_production_agent = sequential_agent.SequentialAgent(
     name="pre_production_agent",
     description="Pre-Production Agent (Phi_pre) that transforms constraints into a storyboard.",
     sub_agents=[
+        cd_flattener_agent,
+        creative_direction_saver,
         creative_brief_agent,
         creative_brief_saver,
         storyline_loop_agent,
@@ -311,17 +325,7 @@ creative_director_agent = llm_agent.LlmAgent(
     before_model_callback=common_utils.prompt_logging_callback,
 )
 
-cd_flattener_agent = llm_agent.LlmAgent(
-    name="cd_flattener_agent",
-    description="Tool agent that flattens creative direction into the state.",
-    model=LLM_MODEL_NAME,
-    instruction="You MUST call the `flatten_creative_direction` tool. Return ONLY the tool output.",
-    tools=[FunctionTool(mab_utils.flatten_creative_direction)],
-)
-
-creative_direction_saver = mab_utils.CreativeDirectionSaver(
-    name="creative_direction_saver"
-)
+# cd_flattener_agent and creative_direction_saver defined above to run sequentially inside pre_production_agent
 
 iteration_manager_agent = llm_agent.LlmAgent(
     name="iteration_manager_agent",
@@ -350,8 +354,6 @@ iteration_orchestrator_agent = llm_agent.LlmAgent(
         mab_selection_agent,
         theoretical_definitions_agent,
         creative_director_agent,
-        cd_flattener_agent,
-        creative_direction_saver,
         pre_production_agent,
         keyframe_prompts_reviewer_agent,
         production_agent,
