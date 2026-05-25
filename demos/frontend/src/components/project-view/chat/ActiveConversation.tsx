@@ -95,6 +95,7 @@ export default function ActiveConversation({
   const [isApproving, setIsApproving] = useState(false);
   const [isAssetDialogOpen, setIsAssetDialogOpen] = useState(false);
   const [isFetchingAsset, setIsFetchingAsset] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [chatFiles, setChatFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
@@ -195,20 +196,39 @@ export default function ActiveConversation({
     }
   };
 
-  const handleSelectAsset = async (asset: ProjectAsset) => {
+  const handleToggleAssetSelection = (assetId: string) => {
+    setSelectedAssetIds((prev) =>
+      prev.includes(assetId)
+        ? prev.filter((id) => id !== assetId)
+        : [...prev, assetId]
+    );
+  };
+
+  const handleAttachSelectedAssets = async () => {
+    const idsToAttach = [...selectedAssetIds];
+    setSelectedAssetIds([]);
     setIsAssetDialogOpen(false);
     setIsFetchingAsset(true);
+
     try {
-      const response = await fetch(asset.url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch asset: ${response.statusText}`);
-      }
-      const blob = await response.blob();
-      const file = new File([blob], asset.fileName || 'unnamed_asset', { type: blob.type });
-      setChatFiles((prev) => [...prev, file]);
+      const attachPromises = idsToAttach.map(async (id) => {
+        const asset = projectAssets.find((a) => a.id === id);
+        if (!asset) return null;
+
+        const response = await fetch(asset.url);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch asset: ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        return new File([blob], asset.fileName || 'unnamed_asset', { type: blob.type });
+      });
+
+      const files = await Promise.all(attachPromises);
+      const validFiles = files.filter((f): f is File => f !== null);
+      setChatFiles((prev) => [...prev, ...validFiles]);
     } catch (err: any) {
-      console.error('Failed to attach project asset:', err);
-      setError(err.message || 'Failed to attach project asset');
+      console.error('Failed to attach project assets:', err);
+      setError(err.message || 'Failed to attach project assets');
     } finally {
       setIsFetchingAsset(false);
     }
@@ -729,41 +749,52 @@ export default function ActiveConversation({
       </Box>
       <Dialog
         open={isAssetDialogOpen}
-        onClose={() => setIsAssetDialogOpen(false)}
+        onClose={() => { setSelectedAssetIds([]); setIsAssetDialogOpen(false); }}
         maxWidth="md"
         fullWidth
       >
-        <DialogTitle>Select Project Asset to Attach</DialogTitle>
+        <DialogTitle>Select Project Assets to Attach</DialogTitle>
         <DialogContent dividers>
           {projectAssets && projectAssets.length > 0 ? (
             <Grid container spacing={2}>
               {projectAssets
                 .filter((asset) => asset.type === 'image')
-                .map((asset) => (
-                  <Grid size={{ xs: 6, sm: 4, md: 3 }} key={asset.id}>
-                    <Card variant="outlined">
-                      <CardActionArea onClick={() => handleSelectAsset(asset)}>
-                        <CardMedia
-                          component="img"
-                          height="120"
-                          image={asset.url}
-                          alt={asset.fileName || 'Asset'}
-                          sx={{ objectFit: 'contain', p: 1, bgcolor: 'grey.900' }}
-                        />
-                        <CardContent sx={{ p: 1 }}>
-                          <Typography
-                            variant="caption"
-                            noWrap
-                            display="block"
-                            sx={{ textAlign: 'center' }}
-                          >
-                            {asset.fileName || 'Unnamed'}
-                          </Typography>
-                        </CardContent>
-                      </CardActionArea>
-                    </Card>
-                  </Grid>
-                ))}
+                .map((asset) => {
+                  const isSelected = selectedAssetIds.includes(asset.id);
+                  return (
+                    <Grid size={{ xs: 6, sm: 4, md: 3 }} key={asset.id}>
+                      <Card
+                        variant="outlined"
+                        sx={{
+                          borderColor: isSelected ? 'primary.main' : 'divider',
+                          borderWidth: isSelected ? 2 : 1,
+                          bgcolor: isSelected ? 'action.selected' : 'background.paper',
+                          position: 'relative',
+                        }}
+                      >
+                        <CardActionArea onClick={() => handleToggleAssetSelection(asset.id)}>
+                          <CardMedia
+                            component="img"
+                            height="120"
+                            image={asset.url}
+                            alt={asset.fileName || 'Asset'}
+                            sx={{ objectFit: 'contain', p: 1, bgcolor: 'grey.900' }}
+                          />
+                          <CardContent sx={{ p: 1 }}>
+                            <Typography
+                              variant="caption"
+                              noWrap
+                              display="block"
+                              sx={{ textAlign: 'center', fontWeight: isSelected ? 'bold' : 'normal' }}
+                            >
+                              {asset.fileName || 'Unnamed'}
+                            </Typography>
+                          </CardContent>
+                        </CardActionArea>
+                      </Card>
+                    </Grid>
+                  );
+                })}
             </Grid>
           ) : (
             <Typography variant="body2" color="text.secondary" align="center">
@@ -772,7 +803,15 @@ export default function ActiveConversation({
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setIsAssetDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => { setSelectedAssetIds([]); setIsAssetDialogOpen(false); }}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleAttachSelectedAssets}
+            disabled={selectedAssetIds.length === 0}
+          >
+            Attach Selected ({selectedAssetIds.length})
+          </Button>
         </DialogActions>
       </Dialog>
 
