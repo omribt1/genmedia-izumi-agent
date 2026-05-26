@@ -377,12 +377,8 @@ mab_report_agent = llm_agent.LlmAgent(
 )
 
 # mab_initialization_agent must come before the LoopAgent to reset state
-mab_initialization_agent = llm_agent.LlmAgent(
-    name="mab_initialization_agent",
-    description="Agent that initializes the MAB experiment.",
-    model=LLM_MODEL_NAME,
-    instruction="You MUST call the `initialize_mab_experiment` tool. Return ONLY the tool output.",
-    tools=[FunctionTool(mab_utils.initialize_mab_experiment)],
+mab_initialization_agent = mab_utils.MabInitializationAgent(
+    name="mab_initialization_agent"
 )
 
 mab_loop_agent = LoopAgent(

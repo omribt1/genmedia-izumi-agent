@@ -504,6 +504,161 @@ async def initialize_mab_experiment(tool_context: ToolContext) -> str:
     return log_msg
 
 
+class MabInitializationAgent(BaseAgent):
+    """Custom agent that runs the MAB experiment initialization and warm-start analysis with progress tracing."""
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="📸 Ingesting campaign reference visuals & initializing Multi-Armed Bandit..."
+                )]
+            )
+        )
+
+        # 1. Check for existing experiment ID to prevent double initialization
+        state = ctx.session.state
+        existing_id = state.get(common_utils.MAB_EXPERIMENT_ID_KEY)
+        if existing_id:
+            logger.info(
+                f"⏭️ [MAB INITIALIZATION SKIP] Experiment already active. ID: {existing_id}"
+            )
+            yield Event(
+                author=self.name,
+                content=genai_types.Content(
+                    parts=[genai_types.Part.from_text(
+                        text="⏭️ MAB experiment already initialized. Continuing..."
+                    )]
+                )
+            )
+            return
+
+        experiment_id = str(uuid.uuid4())
+        user_id = ctx.session.user_id if hasattr(ctx, "session") else common_utils.get_user_id(ctx)
+        config = get_mab_config()
+
+        user_prompt = state.get(common_utils.USER_INPUT_KEY, "N/A")
+        structured_constraints = state.get(
+            common_utils.STRUCTURED_USER_INPUT_KEY, {}
+        )
+
+        user_assets = {}
+        annotated_visuals = state.get(
+            common_utils.ANNOTATED_REFERENCE_VISUALS_KEY, {}
+        )
+        if annotated_visuals:
+            for fname, meta in annotated_visuals.items():
+                user_assets[fname] = (
+                    meta.copy()
+                    if isinstance(meta, dict)
+                    else {"file_name": fname, "caption": str(meta)}
+                )
+
+        legacy_assets = state.get(common_utils.USER_ASSETS_KEY, {})
+        for filename, caption in legacy_assets.items():
+            if filename not in user_assets:
+                user_assets[filename] = {"file_name": filename, "caption": caption}
+            else:
+                current = user_assets[filename]
+                if not current.get("caption") or len(caption) > len(
+                    current.get("caption", "")
+                ):
+                    current["caption"] = caption
+
+        logger.info(
+            f"Initialized MAB experiment with {len(user_assets)} total reference assets."
+        )
+
+        mab_state = MabExperimentState(
+            experiment_id=experiment_id,
+            user_prompt=user_prompt,
+            structured_constraints=structured_constraints,
+            user_assets=user_assets,
+            arm_stats={},
+            iterations=[],
+        )
+
+        mab_params = config.get("mab", {})
+        mab_warm_up = mab_params.get("warm_up", False)
+
+        if mab_warm_up:
+            logger.info(
+                f"[MAB] Warm-up enabled. Performing strategic analysis for experiment {experiment_id}..."
+            )
+            yield Event(
+                author=self.name,
+                content=genai_types.Content(
+                    parts=[genai_types.Part.from_text(
+                        text="🎯 Formulating strategic creative recommendations (MAB Warm Start)..."
+                    )]
+                )
+            )
+
+            from ..instructions.mab import mab_warm_up_instruction
+
+            mediagen_service = mediagent_kit.services.aio.get_media_generation_service()
+            asset_service = mediagent_kit.services.aio.get_asset_service()
+
+            analysis_prompt = mab_warm_up_instruction.get_warm_start_instruction(
+                user_prompt=user_prompt, structured_constraints=structured_constraints
+            )
+
+            try:
+                analysis_asset = await mediagen_service.generate_text_with_gemini(
+                    user_id=user_id,
+                    file_name=f"mab_warm_start_{experiment_id}.txt",
+                    model="gemini-2.5-flash",
+                    prompt=analysis_prompt,
+                )
+                blob = await asset_service.get_asset_blob(analysis_asset.id)
+                raw_text = blob.content.decode()
+
+                warm_start_data = await common_utils.parse_json_from_text(
+                    raw_text, user_id=user_id
+                )
+                recommendations = warm_start_data.get("recommendations", {})
+                reasoning = warm_start_data.get("reasoning", "No reasoning provided.")
+
+                mab_state.warm_start = MabWarmStart(
+                    reasoning=reasoning, recommendations=ArmsSelected(**recommendations)
+                )
+
+                logger.info(f"[MAB Warm Start] Recommendations: {recommendations}")
+                logger.info(f"[MAB Warm Start] Reasoning: {reasoning}")
+
+                yield Event(
+                    author=self.name,
+                    content=genai_types.Content(
+                        parts=[genai_types.Part.from_text(
+                            text=f"✓ Strategic recommendation: Strategy: {recommendations.get('creative_strategy')}, Narrative: {recommendations.get('narrative_mode')}, Aesthetic: {recommendations.get('aesthetic_archetype')}."
+                        )]
+                    )
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"[MAB Warm Start] Strategic analysis failed: {e}. Falling back to cold start."
+                )
+
+        await save_mab_state(mab_state, user_id)
+
+        state[common_utils.MAB_EXPERIMENT_ID_KEY] = experiment_id
+        state["mab_iteration"] = -1
+        state["mab_warm_up"] = mab_warm_up
+
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="📊 MAB experiment initialized. Creative direction synthesis complete."
+                )]
+            )
+        )
+
+
 async def _create_standalone_html_report(
     tool_context: ToolContext, mab_state: MabExperimentState
 ) -> Path | None:

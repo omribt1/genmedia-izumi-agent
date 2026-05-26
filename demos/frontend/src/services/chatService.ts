@@ -169,6 +169,7 @@ const chatService = {
 
           // Identify custom savers/checkers progress events
           const isProgressEvent = [
+            'mab_initialization_agent',
             'cd_flattener_agent',
             'creative_direction_saver',
             'creative_brief_saver',
