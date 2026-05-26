@@ -428,10 +428,44 @@ async def initialize_startup_state(callback_context):
             state[key] = [] if key == common_utils.REFINEMENT_HISTORY_KEY else {}
 
 
+from google.adk.agents.base_agent import BaseAgent
+
+class OnboardingGuardAgent(BaseAgent):
+    """Deterministic guard agent that greets the user and ensures assets & brief are provided before starting the pipeline."""
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        state = ctx.session.state
+        user_prompt = state.get(common_utils.USER_INPUT_KEY, "").strip()
+        
+        # Fetch assets from state
+        user_assets = state.get(common_utils.USER_ASSETS_KEY, {})
+        
+        # If either prompt is missing/generic, or assets are empty, halt and request signal
+        if not user_prompt or user_prompt.lower() in ["hi", "hello", "hey"] or not user_assets:
+            logger.info("🛑 [ONBOARDING GUARD] Assets or brief missing. Halting pipeline execution and greeting user.")
+            yield Event(
+                author=self.name,
+                content=types.Content(parts=[types.Part.from_text(
+                    text="👋 **Welcome to Izumi Studio!** I am your Ads Co-Director.\n\nTo begin your optimized multi-armed bandit campaign production, please:\n1. 📂 **Upload your reference visual assets** (product images or brand logos) using the folder icon.\n2. ✍️ **Provide your campaign brief** (e.g., 'pizza party commercial for Dinky Pizza brand') in the chat below!\n\nI am standing by to ingest your creative direction."
+                )])
+            )
+            # Set pending signals to tell ADK runner to pause execution cleanly
+            state["pending_signals"] = ["brief_and_assets_provided"]
+            return
+
+        logger.info("✅ [ONBOARDING GUARD] Valid brief and assets present. Proceeding directly to campaign production!")
+
+
+onboarding_guard_agent = OnboardingGuardAgent(name="onboarding_guard_agent")
+
+
 startup_agent = sequential_agent.SequentialAgent(
     name="startup_agent",
     description="Sequential agent that processes user assets, campaign parameters, and initializes the MAB experiment.",
     sub_agents=[
+        onboarding_guard_agent, # Gatekeeper at the front of the sequential chain!
         user_assets_agent,
         parameters_agent,
         mab_initialization_agent,
