@@ -389,10 +389,10 @@ mab_loop_agent = LoopAgent(
 )
 
 
-async def initialize_startup_state(ctx: InvocationContext):
+async def initialize_startup_state(callback_context):
     """Before agent callback to extract the user prompt and initialize state keys at turn start."""
-    state = ctx.session.state
-    events = ctx.session.events
+    state = callback_context.state
+    events = callback_context.session.events
 
     # 1. Initialize campaign steps
     if "current_step" not in state:
