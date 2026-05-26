@@ -655,6 +655,13 @@ class MabInitializationAgent(BaseAgent):
                 parts=[genai_types.Part.from_text(
                     text="📊 MAB experiment initialized. Creative direction synthesis complete."
                 )]
+            ),
+            actions=EventActions(
+                state_delta={
+                    common_utils.MAB_EXPERIMENT_ID_KEY: experiment_id,
+                    "mab_iteration": -1,
+                    "mab_warm_up": mab_warm_up,
+                }
             )
         )
 
