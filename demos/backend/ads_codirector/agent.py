@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import AsyncGenerator
+
 from google.adk.agents import LoopAgent, llm_agent, sequential_agent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.tools.agent_tool import AgentTool
