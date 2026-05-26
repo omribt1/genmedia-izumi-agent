@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from google.adk.agents import LoopAgent, llm_agent, sequential_agent
+from google.adk.agents.invocation_context import InvocationContext
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.function_tool import FunctionTool
 
@@ -388,19 +389,43 @@ mab_loop_agent = LoopAgent(
 )
 
 
-async def initialize_mab_state(callback_context):
-    """Initializes the campaign step state at the start of the agent run."""
-    state = callback_context.state
+async def initialize_startup_state(ctx: InvocationContext):
+    """Before agent callback to extract the user prompt and initialize state keys at turn start."""
+    state = ctx.session.state
+    events = ctx.session.events
+
+    # 1. Initialize campaign steps
     if "current_step" not in state:
         state["current_step"] = CampaignStep.START
     if "pending_signals" not in state:
         state["pending_signals"] = []
 
+    # 2. Extract user prompt text from events list
+    user_input = ""
+    if events:
+        for event in reversed(events):
+            if event.author == "user" and event.content and event.content.parts:
+                for part in event.content.parts:
+                    if part.text and not part.text.startswith("For context:") and not part.text.startswith("<asset://"):
+                        user_input += "\n\n" + part.text
+                if user_input:
+                    break
 
-async def combined_callback(callback_context, llm_request):
-    """Combines user input storage and blob interception."""
-    await common_utils.store_user_input_model_callback(callback_context, llm_request)
-    return await blob_interceptor_callback(callback_context, llm_request)
+    state[common_utils.USER_INPUT_KEY] = user_input.strip()
+
+    # 3. Initialize downstream keys to prevent KeyError in template lookups
+    for key in [
+        common_utils.USER_INPUT_KEY,
+        common_utils.STRUCTURED_USER_INPUT_KEY,
+        common_utils.USER_ASSETS_KEY,
+        common_utils.ANNOTATED_REFERENCE_VISUALS_KEY,
+        common_utils.CREATIVE_CONFIG_KEY,
+        common_utils.CREATIVE_BRIEF_KEY,
+        common_utils.STORYBOARD_KEY,
+        common_utils.REFINEMENT_HISTORY_KEY,
+    ]:
+        if key not in state:
+            state[key] = [] if key == common_utils.REFINEMENT_HISTORY_KEY else {}
 
 
 startup_agent = sequential_agent.SequentialAgent(
@@ -422,4 +447,5 @@ root_agent = sequential_agent.SequentialAgent(
         mab_loop_agent,    # Runs MAB iterations and storyboard review pauses
         mab_report_agent,  # Delivers completed campaign reports
     ],
+    before_agent_callback=initialize_startup_state,
 )
