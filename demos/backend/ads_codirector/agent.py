@@ -19,7 +19,6 @@ from google.adk.tools.function_tool import FunctionTool
 from utils.adk import blob_interceptor_callback
 
 from .instructions import (
-    root_instruction,
     parameters_instruction,
 )
 from .instructions.mab import (
@@ -415,15 +414,12 @@ startup_agent = sequential_agent.SequentialAgent(
 )
 
 
-root_agent = llm_agent.LlmAgent(
-    model=LLM_MODEL_NAME,
-    name="orchestrator_agent",
-    instruction=root_instruction.INSTRUCTION,
-    tools=[
-        AgentTool(startup_agent),
-        AgentTool(mab_loop_agent),
-        AgentTool(mab_report_agent),
+# Flat Sequential Root Refactor:
+root_agent = sequential_agent.SequentialAgent(
+    name="ads_codirector_orchestrator",
+    sub_agents=[
+        startup_agent,     # Ingestion, Parameters, MAB Initialization
+        mab_loop_agent,    # Runs MAB iterations and storyboard review pauses
+        mab_report_agent,  # Delivers completed campaign reports
     ],
-    before_agent_callback=initialize_mab_state,
-    before_model_callback=combined_callback,
 )
