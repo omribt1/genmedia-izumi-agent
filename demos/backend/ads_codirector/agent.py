@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import AsyncGenerator
+from google.adk.events.event import Event
 
 from google.adk.agents import LoopAgent, llm_agent, sequential_agent
 from google.adk.agents.invocation_context import InvocationContext
