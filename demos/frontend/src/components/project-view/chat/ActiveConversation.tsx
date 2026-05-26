@@ -98,6 +98,7 @@ export default function ActiveConversation({
   const [isFetchingAsset, setIsFetchingAsset] = useState(false);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
   const [chatFiles, setChatFiles] = useState<File[]>([]);
+  const [activityTrace, setActivityTrace] = useState<Array<{step: string, message: string}>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const thinkingRef = useRef<HTMLDivElement>(null);
@@ -278,6 +279,7 @@ export default function ActiveConversation({
 
       try {
         setIsThinking(true);
+        setActivityTrace([]); // Clear previous thought tracing log
         // Optimistic update for the UI, chatService will also update its internal cache
         setCurrentChatMessages((prev) => [...prev, userMessage]);
 
@@ -301,6 +303,13 @@ export default function ActiveConversation({
           }
         };
 
+        const onProgressUpdate = (progress: { step: string; message: string }) => {
+          setActivityTrace((prev) => {
+            const filtered = prev.filter((item) => item.step !== progress.step);
+            return [...filtered, progress];
+          });
+        };
+
         await chatService.sendMessage(
           projectId,
           appName,
@@ -308,6 +317,7 @@ export default function ActiveConversation({
           userMessage, // Pass the constructed userMessage
           files,
           onPartialUpdate,
+          onProgressUpdate,
         );
       } catch (error: unknown) {
         console.error('Failed to send message', error);
@@ -618,6 +628,27 @@ export default function ActiveConversation({
                       animation: `${bounce} 1.4s infinite ease-in-out both`,
                     }}
                   />
+                  {activityTrace.length > 0 && (
+                    <Box sx={{ mt: 2.5, width: '100%', pl: 1, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                      {activityTrace.map((log, i) => {
+                        const isLast = i === activityTrace.length - 1;
+                        return (
+                          <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography
+                              sx={{
+                                fontSize: '0.82rem',
+                                color: isLast ? 'primary.main' : 'text.secondary',
+                                fontWeight: isLast ? 'medium' : 'normal',
+                                fontFamily: 'monospace',
+                              }}
+                            >
+                              {log.message}
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  )}
                 </Box>
               </Box>
             </Collapse>

@@ -138,6 +138,7 @@ const chatService = {
     userMessage: ChatMessage,
     files: File[] = [],
     onPartialUpdate?: (partialMessage: ChatMessage, isFinal: boolean) => void,
+    onProgressUpdate?: (progress: { step: string; message: string }) => void,
   ): Promise<ChatMessage> => {
     const app = appName || DEFAULT_APP_NAME;
     const cacheKey = `${projectId}:${app}:${chatSessionId}`;
@@ -162,8 +163,34 @@ const chatService = {
 
       api.sendMessage(projectId, app, chatSessionId, userMessage.text, files, {
         onMessage: (messageData: ChatApiResponse) => {
+          const author = messageData.author;
           const contentParts = messageData.content?.parts || [];
           const hasText = contentParts.some((p) => p.text);
+
+          // Identify custom savers/checkers progress events
+          const isProgressEvent = [
+            'cd_flattener_agent',
+            'creative_direction_saver',
+            'creative_brief_saver',
+            'storyboard_saver',
+            'asset_inventory_preparer',
+            'storyline_loop_checker',
+            'storyline_loop_selector'
+          ].includes(author);
+
+          if (isProgressEvent && hasText) {
+            const progressText = contentParts
+              .filter((p) => p.text)
+              .map((p) => p.text)
+              .join('');
+            if (progressText && onProgressUpdate) {
+              onProgressUpdate({
+                step: author,
+                message: progressText,
+              });
+            }
+            return; // Intercept and bypass standard text stream rendering
+          }
 
           if (!messageData.partial) {
             if (fullText) {
