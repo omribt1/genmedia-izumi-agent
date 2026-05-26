@@ -57,6 +57,17 @@ class IzumiResumeHandler:
         )
 
         try:
+            # Instant State-Flush Fix: Save state to DB immediately to eliminate polling lag
+            session = await self.session_service.get_session(
+                app_name="ads_codirector",
+                user_id=user_id,
+                session_id=session_id,
+            )
+            if session:
+                session.state["current_step"] = CampaignStep.STORYBOARD_APPROVED
+                session.state["pending_signals"] = []
+                await self.session_service.save_session(session)
+
             self._log_structured(
                 severity="INFO",
                 message=f"State machine transitioned to {CampaignStep.STORYBOARD_APPROVED}",
@@ -126,6 +137,17 @@ class IzumiResumeHandler:
         )
 
         try:
+            # Instant State-Flush Fix: Save state to DB immediately to eliminate polling lag
+            session = await self.session_service.get_session(
+                app_name="ads_codirector",
+                user_id=user_id,
+                session_id=session_id,
+            )
+            if session:
+                session.state["current_step"] = CampaignStep.KEYFRAME_PROMPTS_APPROVED
+                session.state["pending_signals"] = []
+                await self.session_service.save_session(session)
+
             self._log_structured(
                 severity="INFO",
                 message=f"State machine transitioned to {CampaignStep.KEYFRAME_PROMPTS_APPROVED}",

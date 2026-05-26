@@ -1096,12 +1096,27 @@ class StorylineRefinementChecker(BaseAgent):
                 f"🎯 [STORYLINE DONE] User: {user_id}, MAB Iter: {mab_iter}, Score: {score} (target: {threshold}), Attempt: {attempt_num}/{max_attempts}. Terminating loop."
             )
             state["temp:storyline_done"] = True
-            yield Event(author=self.name, actions=EventActions(escalate=True))
+            yield Event(
+                author=self.name,
+                content=genai_types.Content(
+                    parts=[genai_types.Part.from_text(
+                        text=f"🎯 Storyline script approved by verifier rubric! Final Score: {score}/100 (target: {threshold})."
+                    )]
+                ),
+                actions=EventActions(escalate=True)
+            )
         else:
             logger.info(
                 f"🔄 [STORYLINE CONTINUE] User: {user_id}, MAB Iter: {mab_iter}, Score: {score} (target: {threshold}), Attempt: {attempt_num}/{max_attempts}. Continuing loop."
             )
-            yield Event(author=self.name)
+            yield Event(
+                author=self.name,
+                content=genai_types.Content(
+                    parts=[genai_types.Part.from_text(
+                        text=f"🔄 Storyline loop attempt {attempt_num} completed. Score: {score}/100 (target: {threshold}). Refining storyline script..."
+                    )]
+                )
+            )
 
 
 class StorylineLoopInstructionSelector(BaseAgent):
@@ -1139,6 +1154,14 @@ class StorylineLoopInstructionSelector(BaseAgent):
             elif not storyline_attempts:
                 instruction = storyline_instruction.INSTRUCTION
                 logger.info("Using initial storyline instruction.")
+                yield Event(
+                    author=self.name,
+                    content=genai_types.Content(
+                        parts=[genai_types.Part.from_text(
+                            text="🎭 Designing initial scene storylines and script narrative..."
+                        )]
+                    )
+                )
             else:
                 instruction = storyline_refinement_instruction.INSTRUCTION
                 logger.info("Using storyline revision instruction.")
@@ -1185,7 +1208,14 @@ class CreativeBriefSaver(BaseAgent):
                 )
             except Exception as e:
                 logger.error(f"Failed to save creative brief as asset: {e}")
-        yield Event(author=self.name)
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="💾 Creative Brief B successfully compiled and saved as persistent text asset."
+                )]
+            )
+        )
 
 
 class CreativeDirectionSaver(BaseAgent):
@@ -1194,6 +1224,14 @@ class CreativeDirectionSaver(BaseAgent):
     async def _run_async_impl(
         self, ctx: InvocationContext
     ) -> AsyncGenerator[Event, None]:
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="📂 Flattening creative direction templates..."
+                )]
+            )
+        )
         state = ctx.session.state
         cd = state.get(common_utils.CREATIVE_DIRECTION_KEY)
         if cd:
@@ -1236,7 +1274,14 @@ class CreativeDirectionSaver(BaseAgent):
             except Exception as e:
                 logger.error(f"Failed to save creative direction asset: {e}")
 
-        yield Event(author=self.name)
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="💾 Consolidated MAB creative directions successfully flattened and saved."
+                )]
+            )
+        )
 
 
 class StoryboardSaver(BaseAgent):
@@ -1277,6 +1322,14 @@ class StoryboardSaver(BaseAgent):
 
                 # 2. Generate and save visual HTML storyboard Canvas
                 try:
+                    yield Event(
+                        author=self.name,
+                        content=genai_types.Content(
+                            parts=[genai_types.Part.from_text(
+                                text="🖥️ Compiling interactive Storyboard HTML Canvas..."
+                            )]
+                        )
+                    )
                     logger.info(f"Generating visual HTML storyboard Canvas for user {user_id}...")
                     casting_specs = state.get(common_utils.CASTING_KEY, {})
                     campaign_brief = state.get(common_utils.CREATIVE_BRIEF_KEY, "No brief provided.")
@@ -1301,7 +1354,14 @@ class StoryboardSaver(BaseAgent):
 
             except Exception as e:
                 logger.error(f"Failed to save storyboard as asset: {e}")
-        yield Event(author=self.name)
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="🖥️ Storyboard Canvas successfully created! Placed human review approval gate."
+                )]
+            )
+        )
 
 
 class AssetInventoryPreparer(BaseAgent):
@@ -1325,7 +1385,14 @@ class AssetInventoryPreparer(BaseAgent):
         state["temp:asset_inventory_list"] = (
             "\n".join(inventory) if inventory else "No assets available."
         )
-        yield Event(author=self.name)
+        yield Event(
+            author=self.name,
+            content=genai_types.Content(
+                parts=[genai_types.Part.from_text(
+                    text="🎬 Structuring visual storyboard scenes & dialog scripting..."
+                )]
+            )
+        )
 
 
 def _generate_storyboard_html(

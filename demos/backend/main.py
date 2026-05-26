@@ -17,6 +17,9 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import sys
+sys.setrecursionlimit(5000)
+
 import httpx
 import pydantic.json_schema as pjs
 from fastapi.openapi.utils import get_openapi
