@@ -122,6 +122,8 @@ class MediaGenerationService:
         self._asset_service = asset_service
         self._config = config
 
+    _MEDIA_REGION = "us-central1"
+
     def _get_genai_client(self, region: str | None = None) -> genai.Client:
         project = self._config.google_cloud_project
         if not region:
@@ -147,7 +149,7 @@ class MediaGenerationService:
     ) -> bytes:
         """Calls the Lyria API and returns the generated music as bytes."""
         project = self._config.google_cloud_project
-        region = self._config.google_cloud_location
+        region = "us-central1"
 
         if not project or not region:
             raise ValueError(
@@ -295,7 +297,7 @@ class MediaGenerationService:
             )
         )
 
-        client = self._get_genai_client()
+        client = self._get_genai_client(region=self._MEDIA_REGION)
         response = client.models.generate_images(
             model=model,
             prompt=prompt,
@@ -742,7 +744,7 @@ class MediaGenerationService:
                 }
             )
         )
-        client = self._get_genai_client()
+        client = self._get_genai_client(region=self._MEDIA_REGION)
 
         image_to_pass = None
         first_frame_asset = None

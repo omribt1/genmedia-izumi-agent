@@ -39,6 +39,7 @@ import type { ProjectAsset, Canvas, Job } from '../../data/types';
 import { JobStatus } from '../../data/types';
 import AssetsView from './content/AssetsView';
 import CanvasView from './content/CanvasView';
+import PipelineDashboard from './content/PipelineDashboard';
 
 interface MainContentProps {
   onGenerateClick: () => void;
@@ -48,6 +49,7 @@ interface MainContentProps {
   contentTab?: string;
   assetId?: string;
   canvasId?: string;
+  projectId?: string;
 }
 
 type DisplayItem =
@@ -65,10 +67,11 @@ export default function MainContent({
   contentTab,
   assetId,
   canvasId,
+  projectId,
 }: MainContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const activeTab = contentTab === 'canvas' ? 1 : 0;
+  const activeTab = contentTab === 'pipeline' ? 2 : contentTab === 'canvas' ? 1 : 0;
 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
 
@@ -204,7 +207,7 @@ export default function MainContent({
   const modalOpen = !!selectedAsset;
 
   const handleChange = (_: React.SyntheticEvent, newValue: number) => {
-    const tabName = newValue === 0 ? 'assets' : 'canvas';
+    const tabName = newValue === 0 ? 'assets' : newValue === 1 ? 'canvas' : 'pipeline';
     navigate(`${location.pathname}?contentTab=${tabName}`);
   };
 
@@ -302,6 +305,7 @@ export default function MainContent({
         >
           <Tab label="Assets" />
           <Tab label="Canvas" />
+          <Tab label="Pipeline" />
         </Tabs>
 
         {(activeTab === 0 || activeTab === 1) && (
@@ -490,6 +494,9 @@ export default function MainContent({
             onCanvasClick={handleCanvasClick}
             onBackToCanvasList={handleBackToCanvasList}
           />
+        )}
+        {activeTab === 2 && projectId && (
+          <PipelineDashboard projectId={projectId} />
         )}
       </Box>
       <AssetModal

@@ -21,3 +21,4 @@ export * from './chat';
 export * from './media';
 export * from './job';
 export * from './project';
+export * from './pipeline';

@@ -48,6 +48,14 @@ CD_KEYFRAME_KEY = "cd_keyframe"
 CD_VIDEO_KEY = "cd_video"
 CD_AUDIO_KEY = "cd_audio"
 
+# Pipeline State Keys
+PIPELINE_STEP_KEY = "pipeline_step"
+PIPELINE_HISTORY_KEY = "pipeline_history"
+APPROVAL_FEEDBACK_KEY = "approval_feedback"
+PENDING_APPROVAL_KEY = "pending_approval"
+NUM_TARGET_ITERATIONS_KEY = "num_target_iterations"
+PIPELINE_AUTO_APPROVE_KEY = "pipeline_auto_approve"
+
 
 from google.adk.agents.readonly_context import ReadonlyContext
 
@@ -186,6 +194,16 @@ async def store_user_input_model_callback(
     ]:
         if key not in callback_context.state:
             callback_context.state[key] = [] if key == REFINEMENT_HISTORY_KEY else {}
+
+    # Initialize pipeline state keys
+    list_keys = [PIPELINE_HISTORY_KEY]
+    dict_keys = [APPROVAL_FEEDBACK_KEY, PENDING_APPROVAL_KEY]
+    for key in list_keys:
+        if key not in callback_context.state:
+            callback_context.state[key] = []
+    for key in dict_keys:
+        if key not in callback_context.state:
+            callback_context.state[key] = {}
 
 
 async def prompt_logging_callback(

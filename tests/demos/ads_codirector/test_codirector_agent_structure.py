@@ -16,7 +16,6 @@
 
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.sequential_agent import SequentialAgent
-from google.adk.agents.loop_agent import LoopAgent
 
 
 def test_llm_agent_definitions():
@@ -74,30 +73,67 @@ def test_llm_agent_definitions():
         assert agent.name == name
 
 
-def test_sequential_agent_definitions():
-    """Verify that sequential agents are defined with correct types and names."""
+def test_progress_wrapper_agents():
+    """Verify ProgressWrapper agents wrap the correct sub-agents."""
     from ads_codirector.agent import (
-        pre_production_agent,
-        production_agent,
-        iteration_agent,
+        creative_direction_pipeline,
+        mab_initialization_agent_with_progress,
+        creative_brief_with_saver,
+        storyline_to_storyboard_pipeline,
+        keyframe_agent_with_progress,
+        video_audio_pipeline,
+        post_production_pipeline,
     )
+    from ads_codirector.utils.progress_events import ProgressWrapper
 
-    assert isinstance(pre_production_agent, SequentialAgent)
-    assert pre_production_agent.name == "pre_production_agent"
-    assert len(pre_production_agent.sub_agents) == 10
+    wrappers = [
+        creative_direction_pipeline,
+        mab_initialization_agent_with_progress,
+        creative_brief_with_saver,
+        storyline_to_storyboard_pipeline,
+        keyframe_agent_with_progress,
+        video_audio_pipeline,
+        post_production_pipeline,
+    ]
+    for wrapper in wrappers:
+        assert isinstance(wrapper, ProgressWrapper), f"{wrapper.name} is not a ProgressWrapper"
+        assert len(wrapper.sub_agents) == 1, f"{wrapper.name} should wrap exactly 1 sub-agent"
 
-    assert isinstance(production_agent, SequentialAgent)
-    assert production_agent.name == "production_agent"
-    assert len(production_agent.sub_agents) == 3
 
-    assert isinstance(iteration_agent, SequentialAgent)
-    assert iteration_agent.name == "iteration_agent"
-    assert len(iteration_agent.sub_agents) == 11
+def test_root_agent_tools():
+    """Verify root agent has the correct tools for stateful pipeline."""
+    from ads_codirector.agent import root_agent
+
+    tool_names = [t.name for t in root_agent.tools]
+
+    # Agent tools
+    assert "user_assets_agent" in tool_names
+    assert "parameters_agent" in tool_names
+    assert "mab_init_progress" in tool_names
+    assert "creative_direction_progress" in tool_names
+    assert "creative_brief_progress" in tool_names
+    assert "mab_report_agent" in tool_names
+
+    # Pipeline tools
+    assert "advance_pipeline" in tool_names
+    assert "request_revision" in tool_names
+    assert "present_for_approval" in tool_names
+
+    # Legacy tools should NOT be in root agent
+    assert "mab_loop_agent" not in tool_names
+    assert "iteration_agent" not in tool_names
 
 
-def test_loop_agent_definitions():
-    """Verify that loop agents are defined with correct types and names."""
-    from ads_codirector.agent import mab_loop_agent
+def test_root_agent_has_callbacks():
+    """Verify root agent has the required callbacks."""
+    from ads_codirector.agent import root_agent
 
-    assert isinstance(mab_loop_agent, LoopAgent)
-    assert mab_loop_agent.name == "mab_loop_agent"
+    assert root_agent.before_agent_callback is not None
+    assert root_agent.before_model_callback is not None
+
+
+def test_root_agent_instruction_is_callable():
+    """Verify root agent instruction is a callable (dynamic provider)."""
+    from ads_codirector.agent import root_agent
+
+    assert callable(root_agent.instruction)

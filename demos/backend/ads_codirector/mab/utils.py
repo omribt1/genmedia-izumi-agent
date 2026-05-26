@@ -500,6 +500,9 @@ async def initialize_mab_experiment(tool_context: ToolContext) -> str:
     tool_context.state[common_utils.MAB_EXPERIMENT_ID_KEY] = experiment_id
     tool_context.state["mab_iteration"] = -1
     tool_context.state["mab_warm_up"] = mab_warm_up
+    tool_context.state[common_utils.NUM_TARGET_ITERATIONS_KEY] = config.get(
+        "mab", {}
+    ).get("num_iterations", 1)
 
     return log_msg
 

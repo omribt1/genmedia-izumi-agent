@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 from google.adk.agents import LoopAgent, llm_agent, sequential_agent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.function_tool import FunctionTool
 
@@ -41,6 +44,7 @@ from .tools import (
     video_verifier_tools,
     generation_tools,
     stitching_tools,
+    pipeline_tools,
 )
 from .utils import (
     common_utils,
@@ -50,7 +54,9 @@ from .utils import (
     storyline_evaluator_model,
     storyline_model,
     mab_model,
+    progress_events,
 )
+from .utils.pipeline_steps import PipelineStep
 
 # Reference Alignment: num_iterations is loaded from config
 mab_config = mab_utils.get_mab_config()
@@ -61,7 +67,7 @@ num_iterations = mab_params.get("num_iterations", 1)
 sl_refine_config = mab_config.get("self_refinement", {}).get("storyline", {})
 storyline_max_attempts = sl_refine_config.get("max_attempts", 2)
 
-LLM_MODEL_NAME = "gemini-2.5-flash"
+LLM_MODEL_NAME = "gemini-3.5-flash"
 
 parameters_agent = llm_agent.LlmAgent(
     name="parameters_agent",
@@ -198,23 +204,6 @@ asset_inventory_preparer = mab_utils.AssetInventoryPreparer(
     name="asset_inventory_preparer"
 )
 
-pre_production_agent = sequential_agent.SequentialAgent(
-    name="pre_production_agent",
-    description="Pre-Production Agent (Phi_pre) that transforms constraints into a storyboard.",
-    sub_agents=[
-        creative_brief_agent,
-        creative_brief_saver,
-        storyline_loop_agent,
-        visual_casting_agent,
-        casting_generation_agent,
-        asset_inventory_preparer,
-        storyboard_agent,
-        voiceover_script_agent,
-        storyboard_verifier_agent,
-        storyboard_saver,
-    ],
-)
-
 keyframe_agent = llm_agent.LlmAgent(
     name="keyframe_agent",
     description="Agent that produces and refines keyframes jointly (Phi_frame).",
@@ -237,16 +226,6 @@ audio_agent = llm_agent.LlmAgent(
     model=LLM_MODEL_NAME,
     instruction="You MUST call the 'generate_production_audio' tool.",
     tools=[FunctionTool(generation_tools.generate_production_audio)],
-)
-
-production_agent = sequential_agent.SequentialAgent(
-    name="production_agent",
-    description="Production Agent (Phi_prod) that generates multimodal artifacts.",
-    sub_agents=[
-        keyframe_agent,
-        video_agent,
-        audio_agent,
-    ],
 )
 
 post_production_agent = llm_agent.LlmAgent(
@@ -329,24 +308,6 @@ iteration_manager_agent = llm_agent.LlmAgent(
     tools=[FunctionTool(mab_utils.prepare_iteration_state)],
 )
 
-iteration_agent = sequential_agent.SequentialAgent(
-    name="iteration_agent",
-    description="Agent that produces a video ad.",
-    sub_agents=[
-        iteration_manager_agent,
-        mab_selection_agent,
-        theoretical_definitions_agent,
-        creative_director_agent,
-        cd_flattener_agent,
-        creative_direction_saver,
-        pre_production_agent,
-        production_agent,
-        post_production_agent,
-        final_video_verifier_agent,
-        mab_logging_agent,
-    ],
-)
-
 mab_report_agent = llm_agent.LlmAgent(
     name="mab_report_agent",
     description="Agent that generates the final MAB report.",
@@ -360,7 +321,6 @@ mab_report_agent = llm_agent.LlmAgent(
     tools=[FunctionTool(mab_utils.finalize_and_save_reports)],
 )
 
-# mab_initialization_agent must come before the LoopAgent to reset state
 mab_initialization_agent = llm_agent.LlmAgent(
     name="mab_initialization_agent",
     description="Agent that initializes the MAB experiment.",
@@ -369,12 +329,133 @@ mab_initialization_agent = llm_agent.LlmAgent(
     tools=[FunctionTool(mab_utils.initialize_mab_experiment)],
 )
 
-mab_loop_agent = LoopAgent(
-    name="mab_loop_agent",
-    description=f"Loop agent that runs the production pipeline {num_iterations} times.",
-    sub_agents=[iteration_agent],
-    max_iterations=num_iterations,
+# --- Composite agents for stateful pipeline (finer-grained than the old monolithic agents) ---
+
+creative_direction_pipeline = progress_events.ProgressWrapper(
+    name="creative_direction_progress",
+    start_message="Selecting creative strategy and synthesizing creative direction...",
+    end_message="Creative direction ready for review.",
+    step_name="creative_direction",
+    sub_agents=[
+        sequential_agent.SequentialAgent(
+            name="creative_direction_pipeline",
+            description="Selects MAB arms and synthesizes creative direction for one iteration.",
+            sub_agents=[
+                iteration_manager_agent,
+                mab_selection_agent,
+                theoretical_definitions_agent,
+                creative_director_agent,
+                cd_flattener_agent,
+                creative_direction_saver,
+            ],
+        ),
+    ],
 )
+
+mab_initialization_agent_with_progress = progress_events.ProgressWrapper(
+    name="mab_init_progress",
+    start_message="Initializing the optimization experiment...",
+    end_message="Experiment initialized.",
+    step_name="mab_init",
+    sub_agents=[mab_initialization_agent],
+)
+
+creative_brief_with_saver = progress_events.ProgressWrapper(
+    name="creative_brief_progress",
+    start_message="Writing creative brief...",
+    end_message="Creative brief ready for review.",
+    step_name="creative_brief",
+    sub_agents=[
+        sequential_agent.SequentialAgent(
+            name="creative_brief_with_saver",
+            description="Generates and saves the creative brief.",
+            sub_agents=[creative_brief_agent, creative_brief_saver],
+        ),
+    ],
+)
+
+storyline_to_storyboard_pipeline = progress_events.ProgressWrapper(
+    name="storyline_to_storyboard_progress",
+    start_message="Building storyline, casting characters, and generating storyboard...",
+    end_message="Storyboard complete.",
+    step_name="storyboard",
+    sub_agents=[
+        sequential_agent.SequentialAgent(
+            name="storyline_to_storyboard_pipeline",
+            description="Runs storyline through storyboard generation (after brief, before keyframes).",
+            sub_agents=[
+                storyline_loop_agent,
+                visual_casting_agent,
+                casting_generation_agent,
+                asset_inventory_preparer,
+                storyboard_agent,
+                voiceover_script_agent,
+                storyboard_verifier_agent,
+                storyboard_saver,
+            ],
+        ),
+    ],
+)
+
+keyframe_agent_with_progress = progress_events.ProgressWrapper(
+    name="keyframe_progress",
+    start_message="Generating keyframe images for all scenes...",
+    end_message="All keyframes generated.",
+    step_name="keyframes",
+    sub_agents=[keyframe_agent],
+)
+
+video_audio_pipeline = progress_events.ProgressWrapper(
+    name="video_audio_progress",
+    start_message="Generating video clips and audio...",
+    end_message="Video and audio generation complete.",
+    step_name="video_audio",
+    sub_agents=[
+        sequential_agent.SequentialAgent(
+            name="video_audio_pipeline",
+            description="Generates video clips and audio elements.",
+            sub_agents=[video_agent, audio_agent],
+        ),
+    ],
+)
+
+post_production_pipeline = progress_events.ProgressWrapper(
+    name="post_production_progress",
+    start_message="Stitching final video, running verification, and logging results...",
+    end_message="Post-production complete.",
+    step_name="post_production",
+    sub_agents=[
+        sequential_agent.SequentialAgent(
+            name="post_production_pipeline",
+            description="Stitches final video, verifies quality, and logs MAB iteration results.",
+            sub_agents=[
+                post_production_agent,
+                final_video_verifier_agent,
+                mab_logging_agent,
+            ],
+        ),
+    ],
+)
+
+# --- Pipeline state initialization ---
+
+async def initialize_pipeline_state(callback_context: CallbackContext) -> None:
+    """One-time pipeline state initialization via before_agent_callback."""
+    if common_utils.PIPELINE_STEP_KEY not in callback_context.state:
+        callback_context.state[common_utils.PIPELINE_STEP_KEY] = (
+            PipelineStep.AWAITING_BRIEF
+        )
+        callback_context.state[common_utils.PIPELINE_HISTORY_KEY] = []
+        callback_context.state[common_utils.APPROVAL_FEEDBACK_KEY] = {}
+        callback_context.state[common_utils.PENDING_APPROVAL_KEY] = {}
+
+    if "mab_iteration" not in callback_context.state:
+        callback_context.state["mab_iteration"] = -1
+    if common_utils.NUM_TARGET_ITERATIONS_KEY not in callback_context.state:
+        callback_context.state[common_utils.NUM_TARGET_ITERATIONS_KEY] = 1
+
+    if os.environ.get("BATCH_JOB_MODE") == "True":
+        callback_context.state[common_utils.PIPELINE_AUTO_APPROVE_KEY] = True
 
 
 async def combined_callback(callback_context, llm_request):
@@ -383,16 +464,48 @@ async def combined_callback(callback_context, llm_request):
     return await blob_interceptor_callback(callback_context, llm_request)
 
 
+TOOL_PROGRESS_MESSAGES = {
+    "mab_init_progress": "Initializing the optimization experiment...",
+    "creative_direction_progress": "Selecting creative strategy and synthesizing direction...",
+    "creative_brief_progress": "Writing creative brief...",
+    "storyline_to_storyboard_progress": "Building storyline, casting characters, and generating storyboard...",
+    "keyframe_progress": "Generating keyframe images for all scenes...",
+    "video_audio_progress": "Generating video clips and audio...",
+    "post_production_progress": "Stitching final video and running verification...",
+    "user_assets_agent": "Processing uploaded assets...",
+    "parameters_agent": "Extracting campaign parameters...",
+    "mab_report_agent": "Generating final campaign reports...",
+}
+
+
+async def progress_tool_callback(tool, args, tool_context):
+    """Emits a progress message before each tool call via state delta."""
+    msg = TOOL_PROGRESS_MESSAGES.get(tool.name)
+    if msg:
+        tool_context.state["temp:progress_message"] = msg
+    return None
+
+
 root_agent = llm_agent.LlmAgent(
     model=LLM_MODEL_NAME,
     name="orchestrator_agent",
-    instruction=root_instruction.INSTRUCTION,
+    instruction=root_instruction.get_instruction,
     tools=[
         AgentTool(user_assets_agent),
         AgentTool(parameters_agent),
-        AgentTool(mab_initialization_agent),
-        AgentTool(mab_loop_agent),
+        AgentTool(mab_initialization_agent_with_progress),
+        AgentTool(creative_direction_pipeline),
+        AgentTool(creative_brief_with_saver),
+        AgentTool(storyline_to_storyboard_pipeline),
+        AgentTool(keyframe_agent_with_progress),
+        AgentTool(video_audio_pipeline),
+        AgentTool(post_production_pipeline),
         AgentTool(mab_report_agent),
+        FunctionTool(pipeline_tools.advance_pipeline),
+        FunctionTool(pipeline_tools.request_revision),
+        FunctionTool(pipeline_tools.present_for_approval),
     ],
+    before_agent_callback=initialize_pipeline_state,
     before_model_callback=combined_callback,
+    before_tool_callback=progress_tool_callback,
 )

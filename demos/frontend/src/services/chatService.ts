@@ -165,6 +165,22 @@ const chatService = {
           const contentParts = messageData.content?.parts || [];
           const hasText = contentParts.some((p) => p.text);
 
+          // Check for progress messages in state delta (from before_tool_callback)
+          const stateDelta = messageData.actions?.stateDelta as Record<string, unknown> | undefined;
+          const progressMsg = stateDelta?.['temp:progress_message'] as string | undefined;
+          if (progressMsg && onPartialUpdate) {
+            onPartialUpdate(
+              {
+                id: `progress-${Date.now()}`,
+                sender: 'gemini',
+                text: progressMsg,
+                timestamp: new Date().toISOString(),
+                customMetadata: { event_type: 'pipeline_progress', step: '' },
+              },
+              false,
+            );
+          }
+
           if (!messageData.partial) {
             if (fullText) {
               updateCache({
@@ -189,21 +205,24 @@ const chatService = {
                 true,
               );
             }
-          } else if (hasText) {
+          } else if (hasText || messageData.customMetadata) {
             const partialText = contentParts
               .filter((p) => p.text)
               .map((p) => p.text)
               .join('');
 
-            if (partialText) {
-              fullText += partialText;
+            if (partialText || messageData.customMetadata) {
+              if (partialText) {
+                fullText += partialText;
+              }
               if (onPartialUpdate) {
                 onPartialUpdate(
                   {
                     id: responseId,
                     sender: 'gemini',
-                    text: fullText,
+                    text: messageData.customMetadata ? (partialText || '') : fullText,
                     timestamp: new Date().toISOString(),
+                    customMetadata: messageData.customMetadata,
                   },
                   false,
                 );

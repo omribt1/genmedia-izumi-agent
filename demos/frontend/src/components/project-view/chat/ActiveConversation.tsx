@@ -29,17 +29,27 @@ import {
   CircularProgress,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Checkbox,
+  ImageList,
+  ImageListItem,
+  ImageListItemBar,
 } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AddCommentIcon from '@mui/icons-material/AddComment';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import MarkdownRenderer from '../../shared/MarkdownRenderer';
 import type { ChatMessage, ProjectAsset, Canvas } from '../../../data/types';
 import chatService from '../../../services/chatService';
+import PipelineProgress from './PipelineProgress';
 
 const bounce = keyframes`
   0%, 80%, 100% { 
@@ -85,6 +95,14 @@ export default function ActiveConversation({
   const initializedRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pipelineProgress, setPipelineProgress] = useState<{
+    message: string;
+    step: string;
+    progressPct: number | null;
+  } | null>(null);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [selectedAssets, setSelectedAssets] = useState<ProjectAsset[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -143,6 +161,43 @@ export default function ActiveConversation({
     setChatFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const handleRemoveSelectedAsset = (assetId: string) => {
+    setSelectedAssetIds((prev) => {
+      const next = new Set(prev);
+      next.delete(assetId);
+      return next;
+    });
+    setSelectedAssets((prev) => prev.filter((a) => a.id !== assetId));
+  };
+
+  const handleAssetPickerConfirm = () => {
+    const chosen = projectAssets.filter((a) => selectedAssetIds.has(a.id));
+    setSelectedAssets(chosen);
+    setAssetPickerOpen(false);
+  };
+
+  const handleAssetToggle = (assetId: string) => {
+    setSelectedAssetIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(assetId)) {
+        next.delete(assetId);
+      } else {
+        next.add(assetId);
+      }
+      return next;
+    });
+  };
+
+  const fetchAssetAsFile = async (asset: ProjectAsset): Promise<File> => {
+    const response = await fetch(asset.url);
+    const blob = await response.blob();
+    const extension = asset.fileName?.split('.').pop() || 'png';
+    const mimeType = blob.type || `image/${extension}`;
+    return new File([blob], asset.fileName || `asset_${asset.id}.${extension}`, {
+      type: mimeType,
+    });
+  };
+
   const performSendMessage = useCallback(
     async (text: string, files: File[], userMessageForCache?: ChatMessage) => {
       if (text.trim() === '' && files.length === 0) return;
@@ -170,7 +225,19 @@ export default function ActiveConversation({
         setCurrentChatMessages((prev) => [...prev, userMessage]);
 
         const onPartialUpdate = (partialMsg: ChatMessage, isFinal: boolean) => {
+          // Check if this is a pipeline progress event via custom metadata
+          const metadata = partialMsg.customMetadata;
+          if (metadata?.event_type === 'pipeline_progress') {
+            setPipelineProgress({
+              message: partialMsg.text || '',
+              step: (metadata.step as string) || '',
+              progressPct: (metadata.progress_pct as number) ?? null,
+            });
+            return;
+          }
+
           if (partialMsg.text) {
+            setPipelineProgress(null);
             setCurrentChatMessages((prev) => {
               const existingIndex = prev.findIndex(
                 (m) => m.id === partialMsg.id,
@@ -185,6 +252,7 @@ export default function ActiveConversation({
             });
           }
           if (isFinal) {
+            setPipelineProgress(null);
             onRefreshProject?.();
           }
         };
@@ -208,6 +276,7 @@ export default function ActiveConversation({
         );
       } finally {
         setIsThinking(false);
+        setPipelineProgress(null);
       }
     },
     [appName, projectId, sessionId, onRefreshProject],
@@ -215,11 +284,20 @@ export default function ActiveConversation({
 
   const handleSendMessage = async () => {
     const filesToSend = [...chatFiles];
+    const assetsToSend = [...selectedAssets];
     // Clear input state immediately
     setNewMessage('');
     setChatFiles([]);
+    setSelectedAssets([]);
+    setSelectedAssetIds(new Set());
 
-    await performSendMessage(newMessage, filesToSend);
+    // Convert selected assets to File objects
+    const assetFiles = await Promise.all(
+      assetsToSend.map((asset) => fetchAssetAsFile(asset)),
+    );
+    const allFiles = [...filesToSend, ...assetFiles];
+
+    await performSendMessage(newMessage, allFiles);
   };
 
   // Effect to auto-send greeting
@@ -442,7 +520,13 @@ export default function ActiveConversation({
                 </Box>
               );
             })}
-            <Collapse in={isThinking}>
+            <PipelineProgress
+              message={pipelineProgress?.message || ''}
+              step={pipelineProgress?.step || ''}
+              progressPct={pipelineProgress?.progressPct ?? null}
+              visible={isThinking && !!pipelineProgress}
+            />
+            <Collapse in={isThinking && !pipelineProgress}>
               <Box
                 ref={thinkingRef}
                 sx={{
@@ -502,7 +586,7 @@ export default function ActiveConversation({
         )}
       </Box>
       <Box sx={{ flexShrink: 0 }}>
-        {chatFiles.length > 0 && (
+        {(chatFiles.length > 0 || selectedAssets.length > 0) && (
           <Box
             sx={{
               display: 'flex',
@@ -516,7 +600,7 @@ export default function ActiveConversation({
           >
             {chatFiles.map((file, i) => (
               <Chip
-                key={i}
+                key={`file-${i}`}
                 label={file.name}
                 onDelete={() => handleRemoveFile(i)}
                 avatar={
@@ -524,6 +608,27 @@ export default function ActiveConversation({
                     <img
                       src={URL.createObjectURL(file)}
                       alt={file.name}
+                      style={{ width: 24, height: 24, borderRadius: '50%' }}
+                    />
+                  ) : (
+                    <InsertDriveFileIcon />
+                  )
+                }
+                size="small"
+              />
+            ))}
+            {selectedAssets.map((asset) => (
+              <Chip
+                key={`asset-${asset.id}`}
+                label={asset.fileName || asset.id}
+                onDelete={() => handleRemoveSelectedAsset(asset.id)}
+                color="primary"
+                variant="outlined"
+                avatar={
+                  asset.type === 'image' ? (
+                    <img
+                      src={asset.thumbnailUrl || asset.url}
+                      alt={asset.fileName || ''}
                       style={{ width: 24, height: 24, borderRadius: '50%' }}
                     />
                   ) : (
@@ -542,12 +647,25 @@ export default function ActiveConversation({
             ref={fileInputRef}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
+            accept="image/*,video/*,audio/*"
           />
           <IconButton
             onClick={() => fileInputRef.current?.click()}
-            sx={{ mr: 1 }}
+            sx={{ mr: 0.5 }}
+            title="Upload files"
           >
             <AttachFileIcon />
+          </IconButton>
+          <IconButton
+            onClick={() => {
+              setSelectedAssetIds(new Set(selectedAssets.map((a) => a.id)));
+              setAssetPickerOpen(true);
+            }}
+            sx={{ mr: 1 }}
+            title="Choose from assets"
+            disabled={projectAssets.length === 0}
+          >
+            <PhotoLibraryIcon />
           </IconButton>
           <TextField
             placeholder={`Message ${appName || 'Agent'}...`}
@@ -572,7 +690,9 @@ export default function ActiveConversation({
                     onClick={handleSendMessage}
                     disabled={
                       isThinking ||
-                      (newMessage.trim() === '' && chatFiles.length === 0)
+                      (newMessage.trim() === '' &&
+                        chatFiles.length === 0 &&
+                        selectedAssets.length === 0)
                     }
                   >
                     <SendIcon />
@@ -608,6 +728,83 @@ export default function ActiveConversation({
           {error}
         </Alert>
       </Snackbar>
+
+      <Dialog
+        open={assetPickerOpen}
+        onClose={() => setAssetPickerOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Choose Assets</DialogTitle>
+        <DialogContent>
+          {projectAssets.filter((a) => a.type === 'image').length === 0 ? (
+            <Typography color="text.secondary">No image assets available.</Typography>
+          ) : (
+            <ImageList cols={3} gap={8} sx={{ mt: 1 }}>
+              {projectAssets
+                .filter((a) => a.type === 'image')
+                .map((asset) => (
+                  <ImageListItem
+                    key={asset.id}
+                    onClick={() => handleAssetToggle(asset.id)}
+                    sx={{
+                      cursor: 'pointer',
+                      border: selectedAssetIds.has(asset.id)
+                        ? '3px solid'
+                        : '3px solid transparent',
+                      borderColor: selectedAssetIds.has(asset.id)
+                        ? 'primary.main'
+                        : 'transparent',
+                      borderRadius: 1,
+                      overflow: 'hidden',
+                      position: 'relative',
+                    }}
+                  >
+                    <img
+                      src={asset.thumbnailUrl || asset.url}
+                      alt={asset.fileName || asset.id}
+                      loading="lazy"
+                      style={{
+                        height: 160,
+                        width: '100%',
+                        objectFit: 'cover',
+                      }}
+                    />
+                    <Checkbox
+                      checked={selectedAssetIds.has(asset.id)}
+                      sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        borderRadius: 1,
+                        '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' },
+                      }}
+                      size="small"
+                    />
+                    <ImageListItemBar
+                      title={asset.fileName || asset.id}
+                      sx={{ '& .MuiImageListItemBar-title': { fontSize: 12 } }}
+                    />
+                  </ImageListItem>
+                ))}
+            </ImageList>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Typography variant="body2" sx={{ flexGrow: 1, ml: 2 }}>
+            {selectedAssetIds.size} selected
+          </Typography>
+          <Button onClick={() => setAssetPickerOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleAssetPickerConfirm}
+            variant="contained"
+            disabled={selectedAssetIds.size === 0}
+          >
+            Attach Selected
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

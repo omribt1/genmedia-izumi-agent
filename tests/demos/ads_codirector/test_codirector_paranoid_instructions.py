@@ -75,6 +75,13 @@ def fixture_mock_state():
         common_utils.STORYLINE_KEY: {"scenes": []},
         common_utils.REFINEMENT_HISTORY_KEY: [],
         common_utils.MAB_ITERATION_KEY: 0,
+        # Pipeline State Keys
+        common_utils.PIPELINE_STEP_KEY: "AWAITING_BRIEF",
+        common_utils.PIPELINE_HISTORY_KEY: [],
+        common_utils.APPROVAL_FEEDBACK_KEY: {},
+        common_utils.PENDING_APPROVAL_KEY: {},
+        common_utils.NUM_TARGET_ITERATIONS_KEY: 4,
+        common_utils.PIPELINE_AUTO_APPROVE_KEY: False,
         # Temp Keys
         "temp:asset_inventory_list": "ITEM 1, ITEM 2",
         "temp:storyline_instruction": "DYNAMIC_SL_INSTR",
@@ -125,7 +132,7 @@ async def test_all_instruction_resolutions(mock_state):
         "video_verifier": video_verifier_instruction.INSTRUCTION,
         "keyframe_verifier": keyframe_verifier_instruction.INSTRUCTION,
         "parameters": parameters_instruction.INSTRUCTION,
-        "root": root_instruction.INSTRUCTION,
+        "root": root_instruction._INSTRUCTION_TEMPLATE,
         "user_assets": user_assets_instruction.INSTRUCTION,
     }
     for name, text in static_templates.items():

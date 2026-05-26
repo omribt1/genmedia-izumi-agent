@@ -22,6 +22,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  server: {
+    proxy: {
+      '/list-apps': 'http://localhost:8000',
+      '/apps': 'http://localhost:8000',
+      '/users': 'http://localhost:8000',
+      '/run': 'http://localhost:8000',
+      '/run_sse': 'http://localhost:8000',
+      '/docs': 'http://localhost:8000',
+      '/openapi.json': 'http://localhost:8000',
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

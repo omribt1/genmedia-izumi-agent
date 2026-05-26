@@ -21,6 +21,7 @@ from mediagent_kit.api.assets import router as assets_router
 from mediagent_kit.api.canvases import router as canvases_router
 from mediagent_kit.api.jobs import router as jobs_router
 from mediagent_kit.api.media_generation import router as media_generation_router
+from mediagent_kit.api.pipeline import router as pipeline_router
 from mediagent_kit.api.sessions import router as sessions_router
 from mediagent_kit.api.video_stitching import router as video_stitching_router
 from mediagent_kit.frontend.spa_static_files import SPAStaticFiles
@@ -54,6 +55,7 @@ def mount_to_fastapi_app(app: FastAPI) -> None:
     app.include_router(jobs_router)
     app.include_router(video_stitching_router)
     app.include_router(sessions_router)
+    app.include_router(pipeline_router)
 
     current_dir = os.path.dirname(__file__)
     adk_web_dir = os.path.join(current_dir, "frontend/public/adk-web")

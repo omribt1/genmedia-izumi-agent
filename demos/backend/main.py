@@ -116,6 +116,9 @@ app = adk_server.get_fast_api_app(
     allow_origins=["*"],
 )
 
+# Make adk_server accessible to API endpoints (used by pipeline dashboard)
+app.state.adk_server = adk_server
+
 
 # Fix FastAPI docs issue as per https://github.com/google/adk-python/issues/3316
 def make_openapi(app):

@@ -25,6 +25,7 @@ export interface ChatMessage {
   timestamp: string; // ISO string
   canvasId?: string;
   assetId?: string;
+  customMetadata?: Record<string, unknown>;
   attachments?: {
     type: 'image' | 'file';
     url: string;
@@ -112,4 +113,5 @@ export interface ChatApiResponse {
   id: string;
   timestamp: number;
   partial?: boolean;
+  customMetadata?: Record<string, unknown>;
 }

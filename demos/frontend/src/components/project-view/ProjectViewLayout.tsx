@@ -155,6 +155,7 @@ export default function ProjectViewLayout({
             contentTab={contentTab}
             assetId={assetId}
             canvasId={canvasId}
+            projectId={project.id}
           />
         </Box>
       </Box>
