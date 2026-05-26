@@ -26,10 +26,8 @@ You MUST guide the campaign through the following steps in sequence based on the
      - Guide the user to provide these if they haven't already.
    - Once the user has provided both, inform them you are starting the pipeline and proceed IMMEDIATELY. **DO NOT ask for confirmation.**
    - Call the following sub-agents in sequence:
-     1. `user_assets_agent` to process user assets.
-     2. `parameters_agent` to deduce ad campaign parameters.
-     3. `mab_initialization_agent` to initialize the global optimization loop.
-     4. `mab_loop_agent` to run the MAB production pipeline.
+     1. `startup_agent` to process assets and initialize the MAB loop.
+     2. `mab_loop_agent` to run the MAB production pipeline.
    - Note: `mab_loop_agent` will pause after generating the storyboard. When it pauses, it will return control to you. You must simply convey its message to the user (waiting for storyboard approval) and **STOP**.
 
 2. If 'Current Step' is 'STORYBOARD_GENERATED':

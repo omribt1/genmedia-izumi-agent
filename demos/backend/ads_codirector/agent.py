@@ -404,14 +404,23 @@ async def combined_callback(callback_context, llm_request):
     return await blob_interceptor_callback(callback_context, llm_request)
 
 
+startup_agent = sequential_agent.SequentialAgent(
+    name="startup_agent",
+    description="Sequential agent that processes user assets, campaign parameters, and initializes the MAB experiment.",
+    sub_agents=[
+        user_assets_agent,
+        parameters_agent,
+        mab_initialization_agent,
+    ],
+)
+
+
 root_agent = llm_agent.LlmAgent(
     model=LLM_MODEL_NAME,
     name="orchestrator_agent",
     instruction=root_instruction.INSTRUCTION,
     tools=[
-        AgentTool(user_assets_agent),
-        AgentTool(parameters_agent),
-        AgentTool(mab_initialization_agent),
+        AgentTool(startup_agent),
         AgentTool(mab_loop_agent),
         AgentTool(mab_report_agent),
     ],
