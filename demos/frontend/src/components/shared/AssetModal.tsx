@@ -438,6 +438,20 @@ export default function AssetModal({
                       display: isMediaLoading ? 'none' : 'block',
                     }}
                   />
+                ) : asset.type === 'html' ? (
+                  <iframe
+                    src={currentUrl}
+                    title={asset.fileName || 'HTML Preview'}
+                    style={{
+                      width: '95vw',
+                      height: '85vh',
+                      border: 'none',
+                      borderRadius: '8px',
+                      boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+                      backgroundColor: 'white',
+                    }}
+                    onLoad={() => setIsMediaLoading(false)}
+                  />
                 ) : asset.type === 'text' ? (
                   <Box
                     sx={{

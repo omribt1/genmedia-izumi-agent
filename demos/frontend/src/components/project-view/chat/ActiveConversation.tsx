@@ -108,30 +108,81 @@ export default function ActiveConversation({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Poll pipeline status while thinking to show progress
+  // Poll pipeline status continuously. The pipeline step drives the UI:
+  // - RUNNING_* → show thinking indicator + progress label
+  // - AWAITING_* / PIPELINE_COMPLETE → hide thinking, reload messages
+  // This handles: SSE timeouts, dashboard approvals, long turns, errors.
+  const lastStepRef = useRef<string | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
+  const staleCountRef = useRef<number>(0);
   useEffect(() => {
-    if (!isThinking) return;
-
     const interval = setInterval(async () => {
       try {
         const statuses = await getPipelineStatus(projectId);
         const current = statuses.find((s) => s.session_id === sessionId);
-        if (current) {
-          const stepLabel =
-            STEP_LABELS[current.pipeline_step] || current.pipeline_step;
-          setPipelineProgress({
-            message: stepLabel,
-            step: current.pipeline_step,
-            progressPct: null,
-          });
+        if (!current) return;
+
+        const step = current.pipeline_step;
+        const prevStep = lastStepRef.current;
+        const isRunning =
+          step.startsWith('RUNNING_') ||
+          step === 'INGESTING_ASSETS' ||
+          step === 'INITIALIZING_MAB' ||
+          step === 'CHECKING_ITERATION';
+        const isPaused =
+          step.startsWith('AWAITING_') || step === 'PIPELINE_COMPLETE';
+
+        // Agent is actively processing — show thinking + progress
+        if (isRunning) {
+          const stepLabel = STEP_LABELS[step] || step;
+          setPipelineProgress({ message: stepLabel, step, progressPct: null });
+          if (!isThinking) setIsThinking(true);
         }
+
+        // Step changed to a paused state — agent turn completed
+        if (prevStep && prevStep !== step && isPaused) {
+          const msgs = await chatService.getChatSessionMessages(
+            projectId, appName, sessionId, true,
+          );
+          if (msgs.length > 0) setCurrentChatMessages(msgs);
+          setIsThinking(false);
+          setPipelineProgress(null);
+          onRefreshProject?.();
+        }
+
+        // Detect stale session (agent errored): last_update_time unchanged
+        // for 10+ minutes while in a RUNNING state
+        if (isRunning) {
+          if (current.last_update_time === lastUpdateTimeRef.current) {
+            staleCountRef.current += 1;
+            if (staleCountRef.current >= 120) {
+              const msgs = await chatService.getChatSessionMessages(
+                projectId, appName, sessionId, true,
+              );
+              if (msgs.length > 0) setCurrentChatMessages(msgs);
+              setIsThinking(false);
+              setPipelineProgress({
+                message: 'Agent may have encountered an error',
+                step, progressPct: null,
+              });
+              staleCountRef.current = 0;
+            }
+          } else {
+            staleCountRef.current = 0;
+          }
+        } else {
+          staleCountRef.current = 0;
+        }
+
+        lastUpdateTimeRef.current = current.last_update_time;
+        lastStepRef.current = step;
       } catch {
         // Ignore polling errors
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [isThinking, projectId, sessionId]);
+  }, [projectId, sessionId, appName, isThinking, onRefreshProject]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -297,24 +348,25 @@ export default function ActiveConversation({
         const errorMessage =
           error instanceof Error ? error.message : 'Failed to send message';
         setError(errorMessage);
-        // On error, revert optimistic update if necessary
+        setIsThinking(false);
+        setPipelineProgress(null);
         setCurrentChatMessages((prev) =>
           prev.filter((msg) => msg.id !== userMessage.id),
         );
       } finally {
-        setIsThinking(false);
-        setPipelineProgress(null);
-        // Reload messages from the session to catch any that the SSE missed
+        // Reload messages to catch anything the SSE missed,
+        // then stop thinking. The poller will re-enable thinking
+        // if the agent is still processing (step is RUNNING_*).
         try {
           const msgs = await chatService.getChatSessionMessages(
             projectId, appName, sessionId, true,
           );
-          if (msgs.length > 0) {
-            setCurrentChatMessages(msgs);
-          }
+          if (msgs.length > 0) setCurrentChatMessages(msgs);
         } catch {
-          // Ignore reload errors
+          // ignore
         }
+        setIsThinking(false);
+        setPipelineProgress(null);
       }
     },
     [appName, projectId, sessionId, onRefreshProject],

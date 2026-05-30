@@ -102,6 +102,8 @@ def deploy(
             "APP_ENV": "prod",
             "NUM_WORKERS": "1",
             "GOOGLE_GENAI_USE_VERTEXAI": "True",
+            "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true",
+            "ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS": "true",
         }
 
         config = {

@@ -134,7 +134,7 @@ async def get_session(
     events = []
     for event in session.events:
         e: dict[str, Any] = {"author": event.author}
-        if event.content:
+        if event.content and event.content.parts:
             parts = []
             for part in event.content.parts:
                 if part.text:

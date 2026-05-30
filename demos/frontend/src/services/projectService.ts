@@ -88,11 +88,13 @@ const mapApiAssetToProjectAsset = (
       ? 'video'
       : asset.mime_type.startsWith('audio')
         ? 'audio'
-        : asset.mime_type.startsWith('text')
-          ? 'text'
-          : asset.mime_type.startsWith('image')
-            ? 'image'
-            : 'binary',
+        : asset.mime_type === 'text/html'
+          ? 'html'
+          : asset.mime_type.startsWith('text')
+            ? 'text'
+            : asset.mime_type.startsWith('image')
+              ? 'image'
+              : 'binary',
     url: `${API_BASE_URL}/users/${projectId}/assets/${asset.id}/view?version=${asset.current_version}`,
     thumbnailUrl: undefined,
     fileName: asset.file_name,

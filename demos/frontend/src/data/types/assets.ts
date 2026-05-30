@@ -48,7 +48,7 @@ export type AssetGenerateConfig =
 
 export interface ProjectAsset {
   id: string;
-  type: 'image' | 'video' | 'audio' | 'text' | 'binary';
+  type: 'image' | 'video' | 'audio' | 'text' | 'html' | 'binary';
   url: string;
   thumbnailUrl?: string;
   fileName?: string;

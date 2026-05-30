@@ -128,3 +128,4 @@ my_env.tfvars
 samples/
 output/screenlog.*
 deployment/agent_engine_metadata.json
+docs/

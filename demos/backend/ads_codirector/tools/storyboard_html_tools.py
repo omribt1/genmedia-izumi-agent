@@ -34,13 +34,38 @@ from ..utils.common_utils import (
 logger = logging.getLogger(__name__)
 
 
-def _build_html(
+async def _load_asset_as_data_uri(
+    asset_service: Any, user_id: str, asset_ref: str
+) -> str:
+    """Load an asset by ID or filename and return a base64 data URI."""
+    try:
+        asset_ref = asset_ref.replace("asset://", "")
+        asset = await asset_service.get_asset_by_id(asset_ref)
+        if not asset:
+            asset = await asset_service.get_asset_by_file_name(user_id, asset_ref)
+        if not asset:
+            logger.warning(f"Asset not found: {asset_ref}")
+            return ""
+        blob = await asset_service.get_asset_blob(asset.id)
+        if not blob or not blob.content:
+            return ""
+        import base64
+
+        mime = asset.mime_type or "image/png"
+        b64 = base64.b64encode(blob.content).decode()
+        return f"data:{mime};base64,{b64}"
+    except Exception as e:
+        logger.warning(f"Failed to load asset {asset_ref}: {e}")
+        return ""
+
+
+async def _build_html(
     storyboard: dict[str, Any],
     creative_brief: str,
     user_id: str,
-    base_url: str,
+    asset_service: Any,
 ) -> str:
-    """Build an HTML page showing the storyboard scenes with prompts and images."""
+    """Build an HTML page with embedded base64 images."""
     scenes = storyboard.get("scenes", [])
     voiceover = storyboard.get("voiceover_prompt", {})
     music = storyboard.get("background_music_prompt", {})
@@ -55,19 +80,31 @@ def _build_html(
         duration = video_prompt.get("duration_seconds", "?")
         ref_assets = frame_prompt.get("assets", [])
 
-        # Find the latest generated keyframe asset_id
+        # Find the latest generated keyframe asset — stored as {"asset": {"id": ...}}
         gen_history = scene.get("first_frame_generation_history", [])
         keyframe_asset_id = None
         if gen_history:
             last = gen_history[-1]
-            keyframe_asset_id = last.get("asset_id") or last.get("id")
+            asset_data = last.get("asset", {})
+            if isinstance(asset_data, dict):
+                keyframe_asset_id = asset_data.get("id")
+            if not keyframe_asset_id:
+                keyframe_asset_id = last.get("asset_id") or last.get("id")
 
         keyframe_img = ""
         if keyframe_asset_id:
-            img_url = f"{base_url}/users/{user_id}/assets/{keyframe_asset_id}/download"
-            keyframe_img = f"""
+            data_uri = await _load_asset_as_data_uri(
+                asset_service, user_id, keyframe_asset_id
+            )
+            if data_uri:
+                keyframe_img = f"""
             <div class="keyframe-img">
-                <img src="{img_url}" alt="Keyframe for {topic}" loading="lazy" />
+                <img src="{data_uri}" alt="Keyframe for {topic}" />
+            </div>"""
+            else:
+                keyframe_img = """
+            <div class="keyframe-img placeholder">
+                <span>Keyframe image could not be loaded</span>
             </div>"""
         else:
             keyframe_img = """
@@ -77,12 +114,21 @@ def _build_html(
 
         ref_list = ""
         if ref_assets:
-            ref_items = "".join(
-                f'<img src="{base_url}/users/{user_id}/assets/{escape(a)}/download" '
-                f'alt="{escape(a)}" class="ref-thumb" loading="lazy" />'
-                for a in ref_assets if a
-            )
-            ref_list = f'<div class="ref-images"><strong>Reference Assets:</strong><div class="ref-grid">{ref_items}</div></div>'
+            ref_items = []
+            for a in ref_assets:
+                if not a:
+                    continue
+                fname = a.replace("asset://", "")
+                data_uri = await _load_asset_as_data_uri(
+                    asset_service, user_id, fname
+                )
+                if data_uri:
+                    ref_items.append(
+                        f'<img src="{data_uri}" alt="{escape(fname)}" class="ref-thumb" />'
+                    )
+            if ref_items:
+                ref_html = "".join(ref_items)
+                ref_list = f'<div class="ref-images"><strong>Reference Assets:</strong><div class="ref-grid">{ref_html}</div></div>'
 
         scene_cards.append(f"""
         <div class="scene-card">
@@ -193,12 +239,10 @@ async def generate_storyboard_html(tool_context: ToolContext) -> ToolResult:
     if isinstance(creative_brief, dict):
         creative_brief = creative_brief.get("brief", str(creative_brief))
 
-    base_url = ""
     mab_iter = state.get("mab_iteration", 0)
 
-    html = _build_html(storyboard, creative_brief, user_id, base_url)
-
     asset_service = mediagent_kit.services.aio.get_asset_service()
+    html = await _build_html(storyboard, creative_brief, user_id, asset_service)
     asset = await asset_service.save_asset(
         user_id=user_id,
         file_name=f"iter_{mab_iter}_storyboard_preview.html",

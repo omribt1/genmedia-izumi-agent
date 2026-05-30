@@ -38,13 +38,12 @@ def get_session_service() -> BaseSessionService:
 
 @router.get(
     "/users/{user_id}/sessions",
-    response_model=list[Session],
     tags=["Sessions"],
 )
 async def list_sessions(
     user_id: str,
     session_service: Annotated[BaseSessionService, Depends(get_session_service)],
-) -> list[Session]:
+) -> list[dict]:
     """
     Lists all sessions for a specific user.
     """
@@ -52,13 +51,15 @@ async def list_sessions(
         app_name="ads_codirector", user_id=user_id
     )
 
-    filtered_sessions = []
+    results = []
     for session in response.sessions:
-        if not session.id.startswith(EVAL_SESSION_ID_PREFIX):
-            filtered_sessions.append(session)
-        else:
-            logger.info(
-                f"Filtered out session {session.id} as it is an evaluation session."
-            )
+        if session.id.startswith(EVAL_SESSION_ID_PREFIX):
+            continue
+        results.append({
+            "id": session.id,
+            "appName": session.app_name,
+            "lastUpdateTime": session.last_update_time,
+            "sessionName": session.state.get("session_name", ""),
+        })
 
-    return filtered_sessions
+    return results
