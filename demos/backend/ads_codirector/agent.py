@@ -45,6 +45,7 @@ from .tools import (
     generation_tools,
     stitching_tools,
     pipeline_tools,
+    storyboard_html_tools,
 )
 from .utils import (
     common_utils,
@@ -504,6 +505,7 @@ root_agent = llm_agent.LlmAgent(
         FunctionTool(pipeline_tools.advance_pipeline),
         FunctionTool(pipeline_tools.request_revision),
         FunctionTool(pipeline_tools.present_for_approval),
+        FunctionTool(storyboard_html_tools.generate_storyboard_html),
     ],
     before_agent_callback=initialize_pipeline_state,
     before_model_callback=combined_callback,

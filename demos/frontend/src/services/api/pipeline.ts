@@ -34,6 +34,21 @@ export async function approvePipeline(
   });
 }
 
+export async function renameSession(
+  userId: string,
+  appName: string,
+  sessionId: string,
+  name: string,
+): Promise<{ status: string; session_name: string }> {
+  return request(
+    `/apps/${appName}/users/${userId}/sessions/${sessionId}/rename`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    },
+  );
+}
+
 export async function revisePipeline(
   userId: string,
   sessionId: string,

@@ -45,6 +45,7 @@ export interface APIChatSession {
   id: string;
   appName: string;
   lastUpdateTime?: number; // Unix timestamp
+  sessionName?: string;
 }
 
 // --- API Response Types (Moved from src/services/api/chat-types.ts) ---

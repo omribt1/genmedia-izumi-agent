@@ -31,6 +31,8 @@ class Config:
     RETRY_MAX_ATTEMPTS: int = 5
     RETRY_INITIAL_DELAY_SECONDS: float = 30.0
     FIRESTORE_DATABASE_ID: str = ""
+    DEPLOYMENT_MODE: str = "local"
+    AGENT_ENGINE_RESOURCE_NAME: str = ""
 
 
 def check_firestore_emulator():
@@ -83,6 +85,8 @@ def load_config() -> Config:
             os.environ.get("RETRY_INITIAL_DELAY_SECONDS", "30.0")
         ),
         FIRESTORE_DATABASE_ID=os.environ.get("FIRESTORE_DATABASE_ID", ""),
+        DEPLOYMENT_MODE=os.environ.get("DEPLOYMENT_MODE", "local"),
+        AGENT_ENGINE_RESOURCE_NAME=os.environ.get("AGENT_ENGINE_RESOURCE_NAME", ""),
     )
 
 

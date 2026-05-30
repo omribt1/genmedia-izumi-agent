@@ -72,8 +72,10 @@ kit_config = MediagentKitConfig(
 # Initialize the kit
 mediagent_kit.initialize(kit_config)
 
-# Instantiate your custom FirestoreSessionService
-session_service = mediagent_kit.services.aio.get_firestore_session_service()
+# Instantiate the session service based on deployment mode
+from mediagent_kit.services.aio.session_service_factory import get_session_service
+
+session_service = get_session_service()
 
 # Instantiate the ArtifactService
 if settings.ASSET_SERVICE_GCS_BUCKET:
@@ -94,30 +96,53 @@ class FilteredAgentLoader(AgentLoader):
         return [a for a in agents if a not in ["utils", "dist"]]
 
 
-# Instantiate the other default services
-agent_loader = FilteredAgentLoader(agents_dir)
-memory_service = InMemoryMemoryService()
-credential_service = InMemoryCredentialService()
+# Build the FastAPI app based on deployment mode
+if settings.DEPLOYMENT_MODE == "agent_runtime":
+    # Sidecar mode: no ADK server, just custom APIs + frontend
+    from fastapi import FastAPI
 
-# Create the AdkWebServer with all required services
-adk_server = AdkWebServer(
-    agent_loader=agent_loader,
-    session_service=session_service,
-    artifact_service=artifact_service,
-    memory_service=memory_service,
-    credential_service=credential_service,
-    eval_sets_manager=eval_sets_manager,
-    eval_set_results_manager=eval_set_results_manager,
-    agents_dir=agents_dir,
-)
+    # Initialize vertexai with Agent Runtime location (us-central1),
+    # NOT GOOGLE_CLOUD_LOCATION (global, for Gemini models)
+    import vertexai
 
-# Get the FastAPI app from the web server
-app = adk_server.get_fast_api_app(
-    allow_origins=["*"],
-)
+    resource_name = settings.AGENT_ENGINE_RESOURCE_NAME
+    parts = resource_name.split("/")
+    ar_location = parts[3] if len(parts) == 6 else "us-central1"
+    vertexai.init(
+        project=settings.GOOGLE_CLOUD_PROJECT, location=ar_location
+    )
 
-# Make adk_server accessible to API endpoints (used by pipeline dashboard)
-app.state.adk_server = adk_server
+    app = FastAPI(title="GenMedia Sidecar")
+
+    from mediagent_kit.api.agent_proxy import router as agent_proxy_router
+
+    app.include_router(agent_proxy_router)
+    logging.getLogger(__name__).info(
+        f"Running in agent_runtime sidecar mode (location={ar_location})"
+    )
+else:
+    # Local mode: full ADK server with agent runner
+    agent_loader = FilteredAgentLoader(agents_dir)
+    memory_service = InMemoryMemoryService()
+    credential_service = InMemoryCredentialService()
+
+    adk_server = AdkWebServer(
+        agent_loader=agent_loader,
+        session_service=session_service,
+        artifact_service=artifact_service,
+        memory_service=memory_service,
+        credential_service=credential_service,
+        eval_sets_manager=eval_sets_manager,
+        eval_set_results_manager=eval_set_results_manager,
+        agents_dir=agents_dir,
+    )
+
+    app = adk_server.get_fast_api_app(
+        allow_origins=["*"],
+    )
+
+    # Make adk_server accessible to API endpoints (used by pipeline dashboard)
+    app.state.adk_server = adk_server
 
 
 # Fix FastAPI docs issue as per https://github.com/google/adk-python/issues/3316

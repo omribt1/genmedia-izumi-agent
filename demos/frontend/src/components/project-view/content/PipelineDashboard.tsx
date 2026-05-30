@@ -36,10 +36,13 @@ import {
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import EditIcon from '@mui/icons-material/Edit';
+import IconButton from '@mui/material/IconButton';
 import {
   getPipelineStatus,
   approvePipeline,
   revisePipeline,
+  renameSession,
 } from '../../../services/api/pipeline';
 import {
   PIPELINE_STEPS,
@@ -191,9 +194,30 @@ export default function PipelineDashboard({ projectId }: PipelineDashboardProps)
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Box>
-                <Typography variant="subtitle1" fontWeight="bold">
-                  Session: {pipeline.session_id.slice(0, 8)}...
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    {pipeline.session_name || `Session ${pipeline.session_id.slice(0, 8)}...`}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      const name = window.prompt(
+                        'Rename session:',
+                        pipeline.session_name || '',
+                      );
+                      if (name !== null) {
+                        renameSession(
+                          projectId,
+                          'ads_codirector',
+                          pipeline.session_id,
+                          name,
+                        ).then(() => fetchStatus());
+                      }
+                    }}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Box>
                 <Typography variant="body2" color="text.secondary">
                   Iteration {Math.max(0, pipeline.mab_iteration + 1)} of{' '}
                   {pipeline.num_target_iterations}
@@ -233,13 +257,13 @@ export default function PipelineDashboard({ projectId }: PipelineDashboardProps)
             {pipeline.pending_approval && pipeline.pending_approval.summary && (
               <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
                 <Typography variant="body2" fontWeight="bold" gutterBottom>
-                  Pending Review: {pipeline.pending_approval.gate as string}
+                  Pending Review: {pipeline.pending_approval.gate}
                 </Typography>
                 <Typography
                   variant="body2"
                   sx={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}
                 >
-                  {pipeline.pending_approval.summary as string}
+                  {pipeline.pending_approval.summary}
                 </Typography>
               </Box>
             )}

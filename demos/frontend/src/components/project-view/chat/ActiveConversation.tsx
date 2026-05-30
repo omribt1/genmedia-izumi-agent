@@ -50,6 +50,8 @@ import MarkdownRenderer from '../../shared/MarkdownRenderer';
 import type { ChatMessage, ProjectAsset, Canvas } from '../../../data/types';
 import chatService from '../../../services/chatService';
 import PipelineProgress from './PipelineProgress';
+import { getPipelineStatus } from '../../../services/api/pipeline';
+import { STEP_LABELS } from '../../../data/types/pipeline';
 
 const bounce = keyframes`
   0%, 80%, 100% { 
@@ -105,6 +107,31 @@ export default function ActiveConversation({
   const [selectedAssets, setSelectedAssets] = useState<ProjectAsset[]>([]);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Poll pipeline status while thinking to show progress
+  useEffect(() => {
+    if (!isThinking) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const statuses = await getPipelineStatus(projectId);
+        const current = statuses.find((s) => s.session_id === sessionId);
+        if (current) {
+          const stepLabel =
+            STEP_LABELS[current.pipeline_step] || current.pipeline_step;
+          setPipelineProgress({
+            message: stepLabel,
+            step: current.pipeline_step,
+            progressPct: null,
+          });
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isThinking, projectId, sessionId]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -277,6 +304,17 @@ export default function ActiveConversation({
       } finally {
         setIsThinking(false);
         setPipelineProgress(null);
+        // Reload messages from the session to catch any that the SSE missed
+        try {
+          const msgs = await chatService.getChatSessionMessages(
+            projectId, appName, sessionId, true,
+          );
+          if (msgs.length > 0) {
+            setCurrentChatMessages(msgs);
+          }
+        } catch {
+          // Ignore reload errors
+        }
       }
     },
     [appName, projectId, sessionId, onRefreshProject],

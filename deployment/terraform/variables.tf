@@ -67,4 +67,10 @@ variable "iap_allowed_user_email" {
   description = "The user to grant IAP access, in the format user:email@example.com."
 }
 
+variable "agent_engine_resource_name" {
+  type        = string
+  description = "Full resource name of the Agent Runtime instance (from deploy script output)."
+  default     = ""
+}
+
 

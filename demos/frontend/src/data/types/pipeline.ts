@@ -18,10 +18,11 @@ export interface PipelineStatusResponse {
   session_id: string;
   app_name: string;
   pipeline_step: string;
-  pending_approval: Record<string, unknown> | null;
+  pending_approval: { gate: string; summary: string } | null;
   mab_iteration: number;
   num_target_iterations: number;
   last_update_time: number;
+  session_name: string;
 }
 
 export interface ApprovalPayload {

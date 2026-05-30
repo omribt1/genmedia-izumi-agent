@@ -14,16 +14,17 @@
 
 """Pipeline status and approval webhook endpoints for the dashboard."""
 
-import asyncio
 import logging
+import os
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from mediagent_kit.services.aio import (
-    FirestoreSessionService,
-    get_firestore_session_service,
+from google.adk.sessions.base_session_service import BaseSessionService
+
+from mediagent_kit.services.aio.session_service_factory import (
+    get_session_service as _get_session_service_impl,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ class PipelineStatusResponse(BaseModel):
     mab_iteration: int
     num_target_iterations: int
     last_update_time: float
+    session_name: str = ""
 
 
 class ApprovalPayload(BaseModel):
@@ -58,8 +60,8 @@ class RevisionPayload(BaseModel):
     revision_feedback: str
 
 
-def _get_session_service() -> FirestoreSessionService:
-    return get_firestore_session_service()
+def _get_session_service() -> BaseSessionService:
+    return _get_session_service_impl()
 
 
 @router.get(
@@ -69,11 +71,13 @@ def _get_session_service() -> FirestoreSessionService:
 async def get_pipeline_status(
     user_id: str,
     session_service: Annotated[
-        FirestoreSessionService, Depends(_get_session_service)
+        BaseSessionService, Depends(_get_session_service)
     ],
 ) -> list[PipelineStatusResponse]:
     """Returns all sessions for a user with their pipeline state."""
-    response = await session_service.list_sessions(user_id=user_id)
+    response = await session_service.list_sessions(
+        app_name="ads_codirector", user_id=user_id
+    )
 
     results = []
     for session in response.sessions:
@@ -99,6 +103,7 @@ async def get_pipeline_status(
                     NUM_TARGET_ITERATIONS_KEY, 1
                 ),
                 last_update_time=session.last_update_time,
+                session_name=session.state.get("session_name", ""),
             )
         )
 
@@ -112,7 +117,7 @@ async def approve_from_dashboard(
     payload: ApprovalPayload,
     request: Request,
     session_service: Annotated[
-        FirestoreSessionService, Depends(_get_session_service)
+        BaseSessionService, Depends(_get_session_service)
     ],
 ) -> dict[str, str]:
     """Approve a pipeline gate from the dashboard and resume the agent."""
@@ -144,38 +149,47 @@ async def approve_from_dashboard(
         )
 
     next_step = valid_next[0]
+    message = f"[Dashboard Approval] Approved. {payload.approval_notes}"
 
     logger.info(
         f"Dashboard approval: {current_step} -> {next_step} "
         f"(user={user_id}, session={session_id})"
     )
 
-    from google.genai import types as genai_types
+    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local")
 
-    # Resume the agent via runner.run_async with state_delta
-    # This is the blog post pattern: atomically apply state + send a message
-    adk_server = request.app.state.adk_server
-    runner = await adk_server.get_runner_async("ads_codirector")
+    if deployment_mode == "agent_runtime":
+        from mediagent_kit.services.aio.agent_runtime_client import (
+            get_agent_runtime_client,
+        )
 
-    state_delta = {
-        PIPELINE_STEP_KEY: next_step,
-        PENDING_APPROVAL_KEY: {},
-    }
+        client = get_agent_runtime_client()
+        await client.send_message(
+            user_id=user_id,
+            session_id=session_id,
+            message=message,
+        )
+    else:
+        from google.genai import types as genai_types
 
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=genai_types.Content(
-            role="user",
-            parts=[
-                genai_types.Part(
-                    text=f"[Dashboard Approval] Approved. {payload.approval_notes}"
-                )
-            ],
-        ),
-        state_delta=state_delta,
-    ):
-        logger.info(f"Dashboard resume event: {event.author}")
+        adk_server = request.app.state.adk_server
+        runner = await adk_server.get_runner_async("ads_codirector")
+
+        state_delta = {
+            PIPELINE_STEP_KEY: next_step,
+            PENDING_APPROVAL_KEY: {},
+        }
+
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text=message)],
+            ),
+            state_delta=state_delta,
+        ):
+            logger.info(f"Dashboard resume event: {event.author}")
 
     return {
         "status": "approved",
@@ -191,7 +205,7 @@ async def revise_from_dashboard(
     payload: RevisionPayload,
     request: Request,
     session_service: Annotated[
-        FirestoreSessionService, Depends(_get_session_service)
+        BaseSessionService, Depends(_get_session_service)
     ],
 ) -> dict[str, str]:
     """Request revision from dashboard and resume the agent."""
@@ -223,35 +237,46 @@ async def revise_from_dashboard(
             f"Valid: {list(GATE_TO_ROLLBACK_STEP.keys())}",
         )
 
-    from google.genai import types as genai_types
+    message = f"[Dashboard Revision] {payload.gate_name}: {payload.revision_feedback}"
+    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "local")
 
-    state_delta = {
-        PIPELINE_STEP_KEY: rollback_step,
-        PENDING_APPROVAL_KEY: {},
-        "approval_feedback": {
-            "gate": payload.gate_name,
-            "feedback": payload.revision_feedback,
-            "action": "revise",
-        },
-    }
+    if deployment_mode == "agent_runtime":
+        from mediagent_kit.services.aio.agent_runtime_client import (
+            get_agent_runtime_client,
+        )
 
-    adk_server = request.app.state.adk_server
-    runner = await adk_server.get_runner_async("ads_codirector")
+        client = get_agent_runtime_client()
+        await client.send_message(
+            user_id=user_id,
+            session_id=session_id,
+            message=message,
+        )
+    else:
+        from google.genai import types as genai_types
 
-    async for event in runner.run_async(
-        user_id=user_id,
-        session_id=session_id,
-        new_message=genai_types.Content(
-            role="user",
-            parts=[
-                genai_types.Part(
-                    text=f"[Dashboard Revision] {payload.gate_name}: {payload.revision_feedback}"
-                )
-            ],
-        ),
-        state_delta=state_delta,
-    ):
-        logger.info(f"Dashboard revision event: {event.author}")
+        state_delta = {
+            PIPELINE_STEP_KEY: rollback_step,
+            PENDING_APPROVAL_KEY: {},
+            "approval_feedback": {
+                "gate": payload.gate_name,
+                "feedback": payload.revision_feedback,
+                "action": "revise",
+            },
+        }
+
+        adk_server = request.app.state.adk_server
+        runner = await adk_server.get_runner_async("ads_codirector")
+
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=genai_types.Content(
+                role="user",
+                parts=[genai_types.Part(text=message)],
+            ),
+            state_delta=state_delta,
+        ):
+            logger.info(f"Dashboard revision event: {event.author}")
 
     return {
         "status": "revision_requested",

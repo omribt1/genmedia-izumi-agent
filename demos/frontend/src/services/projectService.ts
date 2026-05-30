@@ -276,7 +276,7 @@ const projectService = {
 
       const mappedSessions = sessions.map((session: APIChatSession) => ({
         id: session.id,
-        title: session.id || 'Untitled Chat',
+        title: session.sessionName || session.id || 'Untitled Chat',
         messages: [],
         lastUpdated: session.lastUpdateTime
           ? new Date(session.lastUpdateTime * 1000).toISOString()

@@ -90,13 +90,18 @@ Wait for the user's response:
 Call `storyline_to_storyboard_progress` to run the full storyline-to-storyboard pipeline
 (storyline generation, character casting, storyboard creation, voiceover script).
 
-After completion, call `present_for_approval` with gate_name="keyframes".
+After completion, call `generate_storyboard_html` to create a visual HTML preview of the
+storyboard with all scene prompts and reference images. Include the returned preview URL
+in your approval summary.
+
+Then call `present_for_approval` with gate_name="keyframes".
 Read the ACTUAL scene data from the storyboard in session state. For the summary, show
 FOR EACH SCENE from the storyboard:
 - Scene number and description
 - The ACTUAL first_frame_prompt text (read from storyboard state, do NOT invent it)
 - The ACTUAL asset filenames referenced in the scene (do NOT make up filenames)
 - The visual style direction
+- The storyboard HTML preview link
 
 ### STATE: AWAITING_KEYFRAME_APPROVAL
 Present the keyframe generation plan to the user. Show a structured view of each scene's
@@ -110,7 +115,10 @@ Wait for the user's response:
 ### STATE: RUNNING_KEYFRAMES
 Call `keyframe_progress` to generate keyframe images for all scenes.
 
-After completion, call `present_for_approval` with gate_name="video".
+After completion, call `generate_storyboard_html` to create an updated visual preview
+with the generated keyframe images. Include the preview URL in your approval summary.
+
+Then call `present_for_approval` with gate_name="video".
 Read the ACTUAL scene data from the storyboard in session state. For the summary, show
 FOR EACH SCENE:
 - The ACTUAL asset_id of the generated keyframe (read from storyboard state first_frame_prompt.asset_id)
